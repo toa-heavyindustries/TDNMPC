@@ -1,4 +1,9 @@
-"""Synthetic profile generation, persistence, and visualization utilities."""
+"""Synthetic profile generation, persistence, and visualization utilities.
+
+Adds a convenience ``make_profiles`` entry to generate and persist a 24h
+typical day for load/PV/temperature, including separate CSV exports and a
+summary plot saved under ``results/figs`` by default.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from typing import Any
+
+from sim.forecast import sample_forecast as sample_forecast  # re-export helper
 
 
 def make_time_index(date: str, freq: str) -> pd.DatetimeIndex:
@@ -230,3 +238,85 @@ def _align_series(series: dict[str, pd.Series]) -> dict[str, pd.Series]:
         aligned[name].name = name
     return aligned
 
+
+def make_profiles(
+    seed: int = 42,
+    *,
+    date: str = "2024-01-01",
+    freq: str = "5min",
+    out_dir: Path | str = Path("data"),
+    fig_dir: Path | str = Path("results/figs"),
+) -> dict[str, Any]:
+    """Generate 24h profiles and save to disk.
+
+    Produces both a combined CSV (``data/profiles.csv``) and three separate
+    CSVs (``data/loads.csv``, ``data/pv.csv``, ``data/temp.csv``) each with
+    columns ``time,index,<name>`` for convenience.
+
+    Returns basic metadata including output paths for downstream tooling.
+    """
+
+    out_base = Path(out_dir)
+    fig_base = Path(fig_dir)
+    out_base.mkdir(parents=True, exist_ok=True)
+    fig_base.mkdir(parents=True, exist_ok=True)
+
+    idx = make_time_index(date, freq)
+    load = gen_load_profile(idx, seed=seed)
+    pv = gen_pv_profile(idx, seed=seed)
+    temp = gen_temp_profile(idx, seed=seed)
+
+    # Combined export
+    combined_path = out_base / "profiles.csv"
+    save_profiles(combined_path, load=load, pv=pv, temp=temp)
+
+    # Separate exports with explicit index column
+    step_index = pd.RangeIndex(start=0, stop=len(idx), step=1, name="index")
+    def _export(path: Path, name: str, series: pd.Series) -> None:
+        df = pd.DataFrame({"time": idx, "index": step_index, name: series.values})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(path, index=False)
+
+    loads_path = out_base / "loads.csv"
+    pv_path = out_base / "pv.csv"
+    temp_path = out_base / "temp.csv"
+    _export(loads_path, "load", load)
+    _export(pv_path, "pv", pv)
+    _export(temp_path, "temp", temp)
+
+    # Plot
+    fig_path = fig_base / f"profiles_{pd.Timestamp(date).date().isoformat()}.png"
+    plot_profiles({"load": load, "pv": pv, "temp": temp}, out=fig_path)
+
+    return {
+        "combined_csv": str(combined_path),
+        "loads_csv": str(loads_path),
+        "pv_csv": str(pv_path),
+        "temp_csv": str(temp_path),
+        "figure": str(fig_path),
+        "points": len(idx),
+        "start": str(idx[0]),
+        "end": str(idx[-1]),
+    }
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Generate and save 24h load/PV/temp profiles.")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--date", default="2024-01-01")
+    parser.add_argument("--freq", default="5min")
+    parser.add_argument("--out-dir", default="data")
+    parser.add_argument("--fig-dir", default="results/figs")
+    args = parser.parse_args()
+
+    meta = make_profiles(
+        seed=args.seed,
+        date=args.date,
+        freq=args.freq,
+        out_dir=Path(args.out_dir),
+        fig_dir=Path(args.fig_dir),
+    )
+    print(json.dumps(meta, indent=2))

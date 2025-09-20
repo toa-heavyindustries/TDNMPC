@@ -16,3 +16,5 @@
 - Step 14 (Batch) — 完成时间 2025-09-20T12:41:28Z: 扩展多 DSO 批处理工具与 CLI seeds 支持，生成 batch.csv 并通过单测。
  - Integration (Runner + Pyomo) — 完成时间 2025-09-20T12:44:18Z: 将 TSO/DSO Pyomo 模型集成进 sim/runner 的 ADMM 回调，新增 cfg/demo.yaml 支持物理约束下的协同优化演示。
 - Step 15 (Testing Sweep) — 完成时间 2025-09-20T12:44:18Z: 汇总新增测试、运行全量 `uv run pytest -q`（GLPK 缺失自动跳过）确认覆盖齐全。
+ - Plan (Basic Experiments) — 创建 @plan.md v1：汇总 M1–M4 里程碑、6 个冒烟用例与详细实施步骤；待确认后按清单推进代码完善与配置补充。
+ - M1 (Profiles & Forecasts) — 增强 `src/profiles.py` 新增 `make_profiles(...)`（输出 data/loads.csv/pv.csv/temp.csv 与 results/figs 图），在 `src/sim/forecast.py` 实现 `sample_forecast(...)`（AR(1) 多场景、支持相对/加性与非负截断），并新增 `data/scenarios.yaml` 默认误差等级集合。
