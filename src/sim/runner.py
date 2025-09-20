@@ -25,7 +25,8 @@ from coord.admm import ADMMConfig
 from nmpc.controller import NMPCConfig, NMPCController
 from utils import ensure_run_dir
 from utils.config import load_config
-from utils.timewin import make_horizon
+from utils.timewin import make_horizon, align_profiles
+from viz.plots import plot_convergence
 from opt.pyomo_tso import (
     TSOParameters,
     build_tso_model,
@@ -52,6 +53,9 @@ class ScenarioState:
     # Integrated Pyomo mode references
     tso_base: dict[str, Any] | None = None  # admittance, injections, boundary, cost_coeff
     dso_params: list[DSOParameters] | None = None
+    # Coupling mapping: length=size arrays mapping each TSO boundary slot to (dso_idx, dso_bus_idx)
+    dso_indices: np.ndarray | None = None
+    dso_bus_indices: np.ndarray | None = None
 
 
 def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
@@ -76,8 +80,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
         cost_coeff = float(tso_cfg.get("cost_coeff", 30.0))
 
         dsos_cfg = cfg["dsos"]
-        if len(dsos_cfg) != len(boundary):
-            raise ValueError("Number of DSOs must match the number of TSO boundary buses")
+        # Allow multiple interfaces per DSO; mapping will define slot ownership.
 
         dso_params: list[DSOParameters] = []
         for d in dsos_cfg:
@@ -90,11 +93,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             # Profiles: accept inline arrays or a CSV path
             prof = d.get("profiles", {})
             if "csv" in prof:
-                # Lightweight loader: expect same columns saved by save_profiles
+                # Load CSV with time column and align to horizon index
                 import pandas as pd
 
-                df = pd.read_csv(prof["csv"])  # type: ignore[arg-type]
-                df = df[["load", "pv"]]
+                df_raw = pd.read_csv(prof["csv"], parse_dates=["time"])  # type: ignore[arg-type]
+                df_raw = df_raw.set_index("time")
+                idx = pd.date_range(start=time_cfg["start"], periods=horizon_steps, freq=f"{time_cfg['dt_min']}min")
+                aligned = align_profiles(idx, {"load": df_raw["load"], "pv": df_raw["pv"]})
+                df = aligned.reset_index(drop=True)
             else:
                 load_arr = np.asarray(prof.get("load", [0.0] * horizon_steps), dtype=float)
                 pv_arr = np.asarray(prof.get("pv", [0.0] * horizon_steps), dtype=float)
@@ -118,6 +124,24 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             )
 
         size = len(boundary)
+        # Coupling mapping: map each boundary bus to (dso_idx, dso_bus_idx)
+        mapping = cfg.get("mapping", {})
+        if not mapping:
+            # Default: one DSO per boundary slot in order, bus 0
+            dso_indices = np.arange(size, dtype=int)
+            dso_bus_indices = np.zeros(size, dtype=int)
+        else:
+            dso_indices = np.empty(size, dtype=int)
+            dso_bus_indices = np.empty(size, dtype=int)
+            for k, bus in enumerate(boundary.tolist()):
+                if str(bus) in mapping:
+                    pair = mapping[str(bus)]
+                elif bus in mapping:
+                    pair = mapping[bus]
+                else:
+                    raise ValueError(f"Missing mapping for boundary bus {bus}")
+                dso_indices[k] = int(pair[0])
+                dso_bus_indices[k] = int(pair[1])
         rho = float(admm_dict.get("rho", 1.0))
 
         solvers = cfg.get("solvers", {})
@@ -153,8 +177,9 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             Current aggregation uses the total active power injection at the first
             horizon step as the boundary response for each DSO.
             """
-            injections_vec = []
+            # Solve each distinct DSO once, then assemble per-interface vector by mapping bus indices
             meta: dict[str, Any] = {"dso_objs": []}
+            solved: list[tuple[DSOParameters, Any]] = []
             for p in dso_params:
                 model = build_dso_model(p)
                 try:
@@ -165,11 +190,17 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                     else:
                         raise
                 res = extract_dso_solution(model, p)
-                # Aggregate pg at step 0 across buses
-                total_pg = float(res.p_injections.iloc[0, :].sum())
-                injections_vec.append(total_pg)
+                solved.append((p, res))
                 meta["dso_objs"].append(res.objective)
-            return np.asarray(injections_vec, dtype=float), meta
+
+            # Build interface vector ordered by TSO boundary slots
+            vec = np.zeros(size, dtype=float)
+            for slot in range(size):
+                di = int(dso_indices[slot])
+                bi = int(dso_bus_indices[slot])
+                _, res = solved[di]
+                vec[slot] = float(res.p_injections.iloc[0, bi])
+            return vec, meta
 
         admm_cfg = ADMMConfig(
             size=size,
@@ -188,7 +219,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             envelope_alpha=float(env_cfg.get("alpha", 0.3)),
         )
         controller = NMPCController(nmpc_cfg)
-        return ScenarioState(controller=controller, history=[], tso_base={"Y": Y, "inj": injections, "boundary": boundary, "cost": cost_coeff}, dso_params=dso_params)
+        return ScenarioState(
+            controller=controller,
+            history=[],
+            tso_base={"Y": Y, "inj": injections, "boundary": boundary, "cost": cost_coeff},
+            dso_params=dso_params,
+            dso_indices=dso_indices,
+            dso_bus_indices=dso_bus_indices,
+        )
 
     # Fallback: toy consensus mode used by tests
     signals = cfg["signals"]
@@ -267,14 +305,33 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
     run_dir = ensure_run_dir(tag=run_cfg.get("tag"), base=run_cfg.get("base", "runs"))
 
     steps = cfg["time"]["steps"]
+    admm_histories: list[list[dict[str, float]]] = []
     for t in range(steps):
-        simulate_step(state, t)
+        ret = simulate_step(state, t)
+        # Capture ADMM iteration history for this step (if available)
+        result = ret.get("result")
+        if result is not None and hasattr(result, "admm_history"):
+            admm_histories.append(result.admm_history)
 
     history = state["scenario"].history
+    import pandas as pd
     df = pd.DataFrame(history)
     df.to_csv(run_dir / "logs.csv", index=False)
     summary = {"final_residual": history[-1]["residual_max"], "steps": steps}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+
+    # Save ADMM per-iteration histories and plots per step
+    import pandas as pd
+    for t, hist in enumerate(admm_histories):
+        if not hist:
+            continue
+        hdf = pd.DataFrame(hist)
+        csv_path = run_dir / f"admm_history_step_{t}.csv"
+        hdf.to_csv(csv_path, index=False)
+        try:
+            plot_convergence(hdf.set_index("iter"), run_dir / f"admm_conv_step_{t}.png")
+        except Exception:
+            pass
 
     return {
         "history": history,

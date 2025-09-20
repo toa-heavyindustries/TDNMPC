@@ -29,9 +29,8 @@ dsos:
       Rq: [[0.0, 0.0], [0.0, 0.0]]
       vm_base: [1.0, 1.0]
     profiles:
-      # length >= time.steps
-      load: [900, 950, 980, 960, 940, 930]
-      pv:   [100, 120, 140, 160, 150, 140]
+      # 如果已生成 data/profiles.csv，可以直接指定 csv 路径
+      csv: data/profiles.csv
     vmin: 0.95
     vmax: 1.05
     penalty_voltage: 1000.0
@@ -44,3 +43,8 @@ envelope:
 run:
   base: runs
   tag: demo
+
+# TSO-DSO 接口映射：将 TSO boundary 中每个母线映射到 (dso_index, dso_bus_index)
+# 这里 boundary 为 [2]，我们映射到 DSO 0 的 bus 0（对应 DSO 模型中的第 0 个总线）
+mapping:
+  "2": [0, 0]
