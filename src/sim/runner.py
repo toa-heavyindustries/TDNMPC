@@ -92,6 +92,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
         injections = np.asarray(tso_cfg["injections"], dtype=float)
         boundary = np.asarray(tso_cfg["boundary"], dtype=int)
         cost_coeff = float(tso_cfg.get("cost_coeff", 30.0))
+        bounds_cfg = tso_cfg.get("bounds")
+        lower_bounds = None
+        upper_bounds = None
+        if bounds_cfg:
+            if "lower" in bounds_cfg:
+                lower_bounds = np.asarray(bounds_cfg["lower"], dtype=float)
+            if "upper" in bounds_cfg:
+                upper_bounds = np.asarray(bounds_cfg["upper"], dtype=float)
 
         dsos_cfg = cfg["dsos"]
         # Allow multiple interfaces per DSO; mapping will define slot ownership.
@@ -212,6 +220,8 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 boundary_targets=np.asarray(v, dtype=float),
                 rho=rho,
                 cost_coeff=cost_coeff,
+                lower_bounds=lower_bounds,
+                upper_bounds=upper_bounds,
             )
             model = build_tso_model(params)
             try:

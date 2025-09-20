@@ -20,6 +20,8 @@ def make_case():
     injections = np.array([-40.0, 10.0, 30.0])
     boundary = np.array([2])
     boundary_targets = np.array([injections[2]])
+    lower_bounds = np.array([20.0])
+    upper_bounds = np.array([40.0])
     params = TSOParameters(
         admittance=admittance,
         injections=injections,
@@ -27,6 +29,8 @@ def make_case():
         boundary_targets=boundary_targets,
         rho=1.0,
         cost_coeff=10.0,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
     )
     return params
 
@@ -61,4 +65,3 @@ def test_solve_and_extract_tso():
         params.injections[[0, 1]] + result.adjustments.loc[[0, 1]].to_numpy()
     )
     assert np.linalg.norm(residual.values, ord=np.inf) < 1e-6
-

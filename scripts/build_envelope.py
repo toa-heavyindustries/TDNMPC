@@ -8,7 +8,12 @@ import logging
 from pathlib import Path
 
 from dso.network import ac_power_flow
-from interface.envelope import BoxEnvelope, build_box_envelope, export_envelopes
+from interface.envelope import (
+    BoxEnvelope,
+    build_box_envelope,
+    envelopes_to_bounds,
+    export_envelopes,
+)
 from models.lindistflow import linearize_lindistflow, validate_linearization
 from sim import plan_baseline_coupled_system
 from utils import ensure_run_dir
@@ -37,7 +42,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def build_envelope_collection(args: argparse.Namespace) -> list[BoxEnvelope]:
+def build_envelope_collection(args: argparse.Namespace) -> tuple[list[BoxEnvelope], list[int]]:
     boundary_labels = None
     if args.boundary:
         parsed = []
@@ -94,18 +99,28 @@ def build_envelope_collection(args: argparse.Namespace) -> list[BoxEnvelope]:
         )
         envelopes.append(env)
 
-    return envelopes
+    return envelopes, list(plan.tso.boundary_buses)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
-    envelopes = build_envelope_collection(args)
+    envelopes, boundary_order = build_envelope_collection(args)
     run_dir = ensure_run_dir(args.tag)
     out_path = args.out if args.out.is_absolute() else run_dir / args.out
     export_envelopes(envelopes, out_path)
     LOGGER.info("Envelopes exported to %s", out_path)
+
+    bounds_lower, bounds_upper = envelopes_to_bounds(envelopes, boundary_order)
+    bounds_payload = {
+        "boundary": [int(b) for b in boundary_order],
+        "lower": bounds_lower.tolist(),
+        "upper": bounds_upper.tolist(),
+    }
+    bounds_path = out_path.with_name(out_path.stem + "_bounds.json")
+    bounds_path.write_text(json.dumps(bounds_payload, indent=2))
+    LOGGER.info("Bounds saved to %s", bounds_path)
 
     meta_path = out_path.with_suffix(".meta.json")
     meta = {

@@ -20,6 +20,8 @@ class TSOParameters:
     boundary_targets: np.ndarray
     rho: float
     cost_coeff: float = 30.0
+    lower_bounds: np.ndarray | None = None
+    upper_bounds: np.ndarray | None = None
 
 
 @dataclass
@@ -44,6 +46,16 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     boundary = np.asarray(params.boundary, dtype=int)
     boundary_targets = np.asarray(params.boundary_targets, dtype=float)
     rho = float(params.rho)
+    lower_bounds = None
+    upper_bounds = None
+    if params.lower_bounds is not None:
+        lower_bounds = np.asarray(params.lower_bounds, dtype=float)
+        if lower_bounds.shape[0] != boundary_targets.shape[0]:
+            raise ValueError("Lower bounds must align with boundary targets")
+    if params.upper_bounds is not None:
+        upper_bounds = np.asarray(params.upper_bounds, dtype=float)
+        if upper_bounds.shape[0] != boundary_targets.shape[0]:
+            raise ValueError("Upper bounds must align with boundary targets")
 
     n_bus = Y.shape[0]
     if Y.shape != (n_bus, n_bus):
@@ -66,10 +78,16 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     model.Y = pyo.Param(model.B, model.B, initialize=Y_dict, mutable=False)
 
     target_map = {int(b): float(t) for b, t in zip(boundary, boundary_targets)}
+    lower_default = -np.inf if lower_bounds is None else lower_bounds
+    upper_default = np.inf if upper_bounds is None else upper_bounds
+    lower_map = {int(b): float(val) for b, val in zip(boundary, lower_default)}
+    upper_map = {int(b): float(val) for b, val in zip(boundary, upper_default)}
     internal_map = {int(b): float(injections[b]) for b in internal_list}
 
     model.P_target = pyo.Param(model.boundary, initialize=target_map, mutable=False)
     model.P_internal = pyo.Param(model.internal, initialize=internal_map, mutable=False)
+    model.P_lower = pyo.Param(model.boundary, initialize=lambda m, i: lower_map[int(i)], mutable=False)
+    model.P_upper = pyo.Param(model.boundary, initialize=lambda m, i: upper_map[int(i)], mutable=False)
 
     model.theta = pyo.Var(model.B, domain=pyo.Reals, initialize=0.0, bounds=(-3.14, 3.14))
     model.p_boundary = pyo.Var(model.boundary, domain=pyo.Reals)
@@ -88,6 +106,11 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
 
     model.boundary_balance = pyo.Constraint(model.boundary, rule=boundary_balance_rule)
     model.internal_balance = pyo.Constraint(model.internal, rule=internal_balance_rule)
+
+    def boundary_limits_rule(m, i):
+        return pyo.inequality(m.P_lower[i], m.p_boundary[i], m.P_upper[i])
+
+    model.boundary_limits = pyo.Constraint(model.boundary, rule=boundary_limits_rule)
 
     def objective_rule(m):
         cost_adj = params.cost_coeff * sum(m.p_adj_pos[i] + m.p_adj_neg[i] for i in m.internal)

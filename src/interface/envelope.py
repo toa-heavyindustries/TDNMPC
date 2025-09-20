@@ -110,3 +110,66 @@ def export_envelopes(envelopes: Sequence[BoxEnvelope], path: Path | str) -> None
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
+
+
+def load_envelopes(path: Path | str) -> list[BoxEnvelope]:
+    """Read envelopes from a JSON file created by :func:`export_envelopes`."""
+
+    with Path(path).open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    elements = payload.get("elements", []) if isinstance(payload, dict) else []
+    envelopes: list[BoxEnvelope] = []
+    for elem in elements:
+        base_info = elem.get("base", {})
+        measurement = BoundaryMeasurement(
+            p_mw=float(base_info.get("p_mw", 0.0)),
+            q_mvar=float(base_info.get("q_mvar", 0.0)),
+            v_pu=float(base_info.get("v_pu", 1.0)),
+            hv_bus=int(elem.get("metadata", {}).get("hv_bus", -1)),
+            trafo_index=int(elem.get("metadata", {}).get("trafo_index", -1)),
+        )
+        env = BoxEnvelope(
+            p_min=float(elem.get("p_min", -np.inf)),
+            p_max=float(elem.get("p_max", np.inf)),
+            q_min=float(elem.get("q_min", -np.inf)),
+            q_max=float(elem.get("q_max", np.inf)),
+            v_min=float(elem.get("voltage_limits", [0.0, 0.0])[0]),
+            v_max=float(elem.get("voltage_limits", [0.0, 1.0])[1]),
+            base=measurement,
+            metadata=elem.get("metadata", {}),
+        )
+        envelopes.append(env)
+    return envelopes
+
+
+def envelopes_to_bounds(
+    envelopes: Sequence[BoxEnvelope],
+    boundary_order: Iterable[int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return lower/upper arrays aligned with ``boundary_order``."""
+
+    env_map: dict[int, BoxEnvelope] = {}
+    for env in envelopes:
+        meta_bus = env.metadata.get("boundary_bus")
+        if meta_bus is None:
+            continue
+        env_map[int(meta_bus)] = env
+
+    lower: list[float] = []
+    upper: list[float] = []
+    for bus in boundary_order:
+        env = env_map.get(int(bus))
+        if env is None:
+            raise KeyError(f"Missing envelope for boundary bus {bus}")
+        lower.append(env.p_min)
+        upper.append(env.p_max)
+
+    return np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
+
+
+def load_bounds(path: Path | str, boundary_order: Iterable[int]) -> tuple[np.ndarray, np.ndarray]:
+    """Convenience loader returning bounds aligned with ``boundary_order``."""
+
+    envelopes = load_envelopes(path)
+    return envelopes_to_bounds(envelopes, boundary_order)
