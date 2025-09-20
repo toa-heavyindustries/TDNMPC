@@ -14,3 +14,4 @@
 - Step 12 (Runner) — 完成时间 2025-09-20T12:31:48Z: 构建配置驱动的场景 runner 与 CLI，生成 logs/summary 并通过集成测试。
 - Step 13 (Metrics & Viz) — 完成时间 2025-09-20T12:36:32Z: 提供指标计算与可视化工具，覆盖评价函数及图表输出并通过单测。
 - Step 14 (Batch) — 完成时间 2025-09-20T12:41:28Z: 扩展多 DSO 批处理工具与 CLI seeds 支持，生成 batch.csv 并通过单测。
+- Step 15 (Testing Sweep) — 完成时间 2025-09-20T12:44:18Z: 汇总新增测试、运行全量 `uv run pytest -q`（GLPK 缺失自动跳过）确认覆盖齐全。
