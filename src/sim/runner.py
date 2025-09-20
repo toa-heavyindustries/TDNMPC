@@ -522,16 +522,32 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
 
-    # Save ADMM per-iteration histories and plots per step
+    # Save ADMM per-iteration histories and combined artifacts
     import pandas as pd
+    combined_rows: list[dict[str, float]] = []
     for t, hist in enumerate(admm_histories):
         if not hist:
             continue
         hdf = pd.DataFrame(hist)
+        # Per-step CSV/PNG (preserve for detailed inspection)
         csv_path = run_dir / f"admm_history_step_{t}.csv"
         hdf.to_csv(csv_path, index=False)
         try:
             plot_convergence(hdf.set_index("iter"), run_dir / f"admm_conv_step_{t}.png")
+        except Exception:
+            pass
+        # Collect for combined outputs
+        hdf = hdf.copy()
+        hdf["step"] = t
+        combined_rows.extend(hdf.to_dict(orient="records"))
+
+    if combined_rows:
+        all_df = pd.DataFrame(combined_rows)
+        all_df.to_csv(run_dir / "admm_history_all.csv", index=False)
+        try:
+            from viz.plots import plot_convergence_multi
+
+            plot_convergence_multi(all_df, run_dir / "admm_convergence_all.png")
         except Exception:
             pass
 
