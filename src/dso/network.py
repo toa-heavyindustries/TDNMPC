@@ -1,0 +1,158 @@
+"""Pandapower helper functions for distribution network modelling."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandapower as pp
+import pandas as pd
+
+
+IEE33_LINE_DATA = [
+    (1, 2, 0.0922, 0.0470),
+    (2, 3, 0.4930, 0.2511),
+    (3, 4, 0.3660, 0.1864),
+    (4, 5, 0.3811, 0.1941),
+    (5, 6, 0.8190, 0.7070),
+    (6, 7, 0.1872, 0.6188),
+    (7, 8, 1.7114, 1.2351),
+    (8, 9, 1.0300, 0.7400),
+    (9, 10, 1.0440, 0.7400),
+    (10, 11, 0.1966, 0.0650),
+    (11, 12, 0.3744, 0.1238),
+    (12, 13, 1.4680, 1.1550),
+    (13, 14, 0.5416, 0.7129),
+    (14, 15, 0.5910, 0.5260),
+    (15, 16, 0.7463, 0.5450),
+    (16, 17, 1.2890, 1.7210),
+    (17, 18, 0.7320, 0.5740),
+    (2, 19, 0.1640, 0.1565),
+    (19, 20, 1.5042, 1.3554),
+    (20, 21, 0.4095, 0.4784),
+    (21, 22, 0.7089, 0.9373),
+    (3, 23, 0.4512, 0.3083),
+    (23, 24, 0.8980, 0.7091),
+    (24, 25, 0.8960, 0.7011),
+    (6, 26, 0.2030, 0.1034),
+    (26, 27, 0.2842, 0.1447),
+    (27, 28, 1.0590, 0.9337),
+    (28, 29, 0.8042, 1.3400),
+    (29, 30, 0.5075, 0.2585),
+    (30, 31, 0.9744, 0.9630),
+    (31, 32, 0.3105, 0.3619),
+    (32, 33, 0.3410, 0.5302),
+]
+
+LOADS_KW = {
+    2: (100, 60),
+    3: (90, 40),
+    4: (120, 80),
+    5: (60, 30),
+    6: (60, 35),
+    7: (200, 100),
+    8: (200, 100),
+    9: (60, 20),
+    10: (60, 20),
+    11: (45, 30),
+    12: (60, 35),
+    13: (72, 40),
+    14: (72, 40),
+    15: (36, 20),
+    16: (36, 20),
+    17: (60, 20),
+    18: (60, 20),
+    19: (90, 40),
+    20: (90, 40),
+    21: (90, 40),
+    22: (90, 40),
+    23: (90, 50),
+    24: (420, 200),
+    25: (420, 200),
+    26: (60, 25),
+    27: (60, 25),
+    28: (60, 20),
+    29: (120, 70),
+    30: (200, 600),
+    31: (150, 70),
+    32: (210, 100),
+    33: (60, 20),
+}
+
+
+def build_ieee33(base_kv: float = 12.66) -> pp.pandapowerNet:
+    """Construct a single-phase IEEE 33-bus distribution test feeder.
+
+    Parameters
+    ----------
+    base_kv:
+        Base voltage level in kV for the MV grid.
+
+    Returns
+    -------
+    pp.pandapowerNet
+        Pandapower network object with bus, line, load, and slack definitions.
+    """
+
+    net = pp.create_empty_network(sn_mva=100.0)
+
+    buses = {1: pp.create_bus(net, vn_kv=base_kv, name="Bus 1")}
+    for bus_idx in range(2, 34):
+        buses[bus_idx] = pp.create_bus(net, vn_kv=base_kv, name=f"Bus {bus_idx}")
+
+    pp.create_ext_grid(net, buses[1], vm_pu=1.0, name="Slack")
+
+    for bus_idx, (p_kw, q_kw) in LOADS_KW.items():
+        pp.create_load(
+            net,
+            bus=buses[bus_idx],
+            p_mw=p_kw / 1000.0,
+            q_mvar=q_kw / 1000.0,
+            name=f"Load {bus_idx}",
+        )
+
+    for from_bus, to_bus, r, x in IEE33_LINE_DATA:
+        pp.create_line_from_parameters(
+            net,
+            from_bus=buses[from_bus],
+            to_bus=buses[to_bus],
+            length_km=1.0,
+            r_ohm_per_km=r,
+            x_ohm_per_km=x,
+            c_nf_per_km=0.0,
+            max_i_ka=0.4,
+            name=f"Line {from_bus}-{to_bus}",
+        )
+
+    return net
+
+
+def ac_power_flow(net: pp.pandapowerNet) -> pd.DataFrame:
+    """Run an AC power flow and return bus-level voltage and load data."""
+
+    pp.runpp(net, algorithm="nr", numba=False, enforce_q_lims=True)
+
+    bus = net.res_bus
+    result = pd.DataFrame(index=bus.index)
+    result["vm_pu"] = bus.vm_pu
+    result["va_degree"] = bus.va_degree
+    result["p_kw"] = net.res_load.p_mw.reindex(bus.index, fill_value=0.0) * 1000
+    result["q_kw"] = net.res_load.q_mvar.reindex(bus.index, fill_value=0.0) * 1000
+    return result
+
+
+def export_net(net: pp.pandapowerNet, path: Path) -> None:
+    """Serialise a pandapower network to disk using JSON."""
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pp.to_json(net, path)
+
+
+def load_net(path: Path) -> pp.pandapowerNet:
+    """Load a pandapower network serialized by :func:`export_net`."""
+
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Network file not found: {path}")
+    return pp.from_json(path)
+
