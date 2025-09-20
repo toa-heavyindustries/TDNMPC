@@ -13,6 +13,8 @@ admm:
 
 solvers:
   tso: ipopt
+  tso_options:
+    max_iter: 300
   dso: ipopt
 
 tso:

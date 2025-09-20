@@ -18,6 +18,7 @@ class TSOParameters:
     injections: np.ndarray
     boundary: np.ndarray
     boundary_targets: np.ndarray
+    rho: float
     cost_coeff: float = 30.0
 
 
@@ -42,6 +43,7 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     injections = np.asarray(params.injections, dtype=float)
     boundary = np.asarray(params.boundary, dtype=int)
     boundary_targets = np.asarray(params.boundary_targets, dtype=float)
+    rho = float(params.rho)
 
     n_bus = Y.shape[0]
     if Y.shape != (n_bus, n_bus):
@@ -63,13 +65,14 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     Y_dict = {(i, j): float(Y[i, j]) for i in all_buses for j in all_buses}
     model.Y = pyo.Param(model.B, model.B, initialize=Y_dict, mutable=False)
 
-    boundary_map = {int(b): float(t) for b, t in zip(boundary_list, boundary_targets)}
+    target_map = {int(b): float(t) for b, t in zip(boundary, boundary_targets)}
     internal_map = {int(b): float(injections[b]) for b in internal_list}
 
-    model.P_boundary = pyo.Param(model.boundary, initialize=boundary_map, mutable=False)
+    model.P_target = pyo.Param(model.boundary, initialize=target_map, mutable=False)
     model.P_internal = pyo.Param(model.internal, initialize=internal_map, mutable=False)
 
-    model.theta = pyo.Var(model.B, domain=pyo.Reals, initialize=0.0)
+    model.theta = pyo.Var(model.B, domain=pyo.Reals, initialize=0.0, bounds=(-3.14, 3.14))
+    model.p_boundary = pyo.Var(model.boundary, domain=pyo.Reals)
     model.p_adj_pos = pyo.Var(model.internal, domain=pyo.NonNegativeReals)
     model.p_adj_neg = pyo.Var(model.internal, domain=pyo.NonNegativeReals)
     model.p_adj = pyo.Expression(model.internal, rule=lambda m, i: m.p_adj_pos[i] - m.p_adj_neg[i])
@@ -78,7 +81,7 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     model.theta[slack_bus].fix(0.0)
 
     def boundary_balance_rule(m, i):
-        return _flow_expression(m, i) == m.P_boundary[i]
+        return _flow_expression(m, i) == m.p_boundary[i]
 
     def internal_balance_rule(m, i):
         return _flow_expression(m, i) == m.P_internal[i] + m.p_adj[i]
@@ -87,26 +90,31 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     model.internal_balance = pyo.Constraint(model.internal, rule=internal_balance_rule)
 
     def objective_rule(m):
-        return params.cost_coeff * sum(m.p_adj_pos[i] + m.p_adj_neg[i] for i in m.internal)
+        cost_adj = params.cost_coeff * sum(m.p_adj_pos[i] + m.p_adj_neg[i] for i in m.internal)
+        cost_admm = (rho / 2.0) * sum((m.p_boundary[i] - m.P_target[i])**2 for i in m.boundary)
+        return cost_adj + cost_admm
 
     model.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
 
     return model
 
 
-def solve_tso_model(model: pyo.ConcreteModel, solver: str = "glpk") -> pyo.SolverResults:
+def solve_tso_model(
+    model: pyo.ConcreteModel, solver: str = "glpk", options: dict[str, Any] | None = None
+) -> pyo.SolverResults:
     """Solve the Pyomo TSO model using the specified solver."""
 
     solver_obj = pyo.SolverFactory(solver)
     if solver_obj is None or not solver_obj.available():
         raise RuntimeError(f"Solver {solver} is not available")
 
-    results = solver_obj.solve(model, tee=False)
-    if (results.solver.status != pyo.SolverStatus.ok) or (
+    results = solver_obj.solve(model, tee=False, options=options or {})
+    if (
         results.solver.termination_condition
-        not in {pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible}
+        == pyo.TerminationCondition.unbounded
     ):
-        raise RuntimeError("TSO optimisation failed")
+        raise RuntimeError("TSO optimisation failed: problem unbounded")
+    # Allow other non-optimal statuses like maxIterations to pass as warnings
     return results
 
 

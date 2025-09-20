@@ -157,6 +157,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
 
         solvers = cfg.get("solvers", {})
         tso_solver_name = str(solvers.get("tso", "ipopt"))
+        tso_solver_options = solvers.get("tso_options", {})
         dso_solver_name = str(solvers.get("dso", "ipopt"))
 
         # Precompute TI envelope bounds if enabled or required (OUR/B3)
@@ -206,11 +207,12 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 injections=injections,
                 boundary=boundary,
                 boundary_targets=np.asarray(v, dtype=float),
+                rho=rho,
                 cost_coeff=cost_coeff,
             )
             model = build_tso_model(params)
             try:
-                solve_tso_model(model, solver=tso_solver_name)
+                solve_tso_model(model, solver=tso_solver_name, options=tso_solver_options)
                 res = extract_tso_solution(model, params)
                 flows_vec = res.flows.loc[boundary.tolist()].to_numpy()
                 obj = res.objective if hasattr(res, "objective") else None
