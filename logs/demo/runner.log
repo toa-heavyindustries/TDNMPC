@@ -4,3 +4,9 @@
 2025-09-21 05:32:08 | INFO | runner | Step 3/3 | residual_max=4.768e-07 | residual_mean=3.576e-07
 2025-09-21 05:32:08 | INFO | runner | Metrics written to logs/demo/metrics.csv
 2025-09-21 05:32:08 | INFO | runner | Summary | final_residual=4.768e-07 | mean_residual=3.576e-07 | interfaces=2
+2025-09-21 06:01:10 | INFO | runner | Simulation run created | seed=0 | steps=3 | dt_min=15 | run_dir=/private/var/folders/6j/t6d6_fqd791cf0hg29p22v4c0000gn/T/pytest-of-zephon/pytest-100/test_simulate_scenario_produce0/demo
+2025-09-21 06:01:10 | INFO | runner | Step 1/3 | residual_max=4.768e-07 | residual_mean=3.576e-07
+2025-09-21 06:01:10 | INFO | runner | Step 2/3 | residual_max=4.768e-07 | residual_mean=3.576e-07
+2025-09-21 06:01:10 | INFO | runner | Step 3/3 | residual_max=4.768e-07 | residual_mean=3.576e-07
+2025-09-21 06:01:10 | INFO | runner | Metrics written to logs/demo/metrics.csv
+2025-09-21 06:01:10 | INFO | runner | Summary | final_residual=4.768e-07 | mean_residual=3.576e-07 | interfaces=2

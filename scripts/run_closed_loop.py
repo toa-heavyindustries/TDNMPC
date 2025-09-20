@@ -16,6 +16,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steps", type=int, default=12, help="Number of simulation steps")
     parser.add_argument("--amplitude", type=float, default=1.0, help="Power oscillation amplitude (MW)")
+    parser.add_argument("--noise-std", type=float, default=0.0, help="Gaussian noise std dev for load requests (MW)")
+    parser.add_argument("--shrink", type=float, default=0.0, help="Envelope shrink margin (MW)")
     parser.add_argument("--solver", default="glpk", help="Pyomo solver name")
     parser.add_argument("--feeder-peak", type=float, default=20.0, help="Feeder peak MW")
     parser.add_argument("--dt-min", type=float, default=5.0, help="Time step in minutes")
@@ -43,6 +45,8 @@ def main(argv: list[str] | None = None) -> None:
         solver=args.solver,
         dt_min=args.dt_min,
         load_profile=load_profile,
+        noise_std=args.noise_std,
+        shrink=args.shrink,
     )
 
     run_dir = ensure_run_dir(args.tag)

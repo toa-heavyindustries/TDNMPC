@@ -28,3 +28,4 @@ def test_run_closed_loop_summary() -> None:
     assert 0.9 <= summary["min_voltage"] <= 1.05
     assert summary["max_voltage"] <= 1.05
     assert summary["soc_range"] >= 0.0
+    assert summary["voltage_violations"] == 0.0

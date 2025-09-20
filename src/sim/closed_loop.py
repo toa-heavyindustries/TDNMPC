@@ -43,6 +43,8 @@ def run_closed_loop(
     feeder_peak_mw: float = 20.0,
     solver: str = "glpk",
     envelope_margin: float = 0.5,
+    shrink: float = 0.0,
+    noise_std: float = 0.0,
     dt_min: float = 5.0,
     load_profile: Sequence[float] | None = None,
 ) -> ClosedLoopResult:
@@ -70,10 +72,15 @@ def run_closed_loop(
         envelopes.append(env)
 
     lower_bounds, upper_bounds = envelopes_to_bounds(envelopes, boundary_order)
+    if shrink > 0.0:
+        lower_bounds = lower_bounds + shrink
+        upper_bounds = upper_bounds - shrink
+        lower_bounds = np.minimum(lower_bounds, upper_bounds)
 
     records: list[dict[str, float]] = []
     dt_hours = dt_min / 60.0
     soc: dict[int, float] = {int(bus): 0.0 for bus in boundary_order}
+    rng = np.random.default_rng(42)
 
     for step in range(steps):
         phase = 2.0 * math.pi * (step / max(steps, 1))
@@ -82,6 +89,7 @@ def run_closed_loop(
         dso_targets: dict[int, float] = {}
         voltage_min = float("inf")
         voltage_max = float("-inf")
+        voltage_violations = 0
 
         for env, feeder, bus in zip(envelopes, feeders, boundary_order):
             base_p, base_q, _ = measure_boundary(feeder.net)
@@ -89,6 +97,8 @@ def run_closed_loop(
                 target_raw = float(load_profile[step])
             else:
                 target_raw = base_p + offset
+            if noise_std > 0.0:
+                target_raw += rng.normal(scale=noise_std)
             target_p = target_raw
             target_p = min(env.p_max - envelope_margin, max(env.p_min + envelope_margin, target_p))
             measurement = apply_reference(feeder.net, target_p, base_q)
@@ -97,6 +107,7 @@ def run_closed_loop(
             pp.runpp(feeder.net, algorithm="nr", numba=False)
             voltage_min = min(voltage_min, float(feeder.net.res_bus.vm_pu.min()))
             voltage_max = max(voltage_max, float(feeder.net.res_bus.vm_pu.max()))
+            voltage_violations += int((feeder.net.res_bus.vm_pu < 0.95).any() or (feeder.net.res_bus.vm_pu > 1.05).any())
 
         boundary_targets = np.asarray([dso_targets[int(bus)] for bus in boundary_order], dtype=float)
 
@@ -128,6 +139,7 @@ def run_closed_loop(
                     "p_request": target_raw,
                     "v_min": voltage_min,
                     "v_max": voltage_max,
+                    "voltage_violation": float(voltage_violations),
                     "soc": soc[bus],
                 }
             )
@@ -141,6 +153,7 @@ def run_closed_loop(
         "soc_min": float(history["soc"].min()) if not history.empty else float("nan"),
         "soc_max": float(history["soc"].max()) if not history.empty else float("nan"),
         "soc_range": float(history["soc"].max() - history["soc"].min()) if not history.empty else float("nan"),
+        "voltage_violations": float(history["voltage_violation"].sum()) if not history.empty else 0.0,
     }
 
     return ClosedLoopResult(history=history, summary=summary, envelopes=envelopes, boundary_order=boundary_order)
