@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sim.runner import _simulate
+from sim.runner import simulate
 from utils import ensure_run_dir
 from utils.batch import run_batch
 from utils.config import load_config
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> None:
             run_tag = run_cfg.get("tag", "run")
             cfg_copy["run"].update({"tag": f"{run_tag}-s{seed}", "base": str(base_dir)})
             cfg_copy["seed"] = seed
-            result = _simulate(cfg_copy)
+            result = simulate(cfg_copy)
             return {
                 "run_dir": str(result["run_dir"]),
                 "final_residual": result["final_residual"],
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
         df = run_batch(simulator, seeds, batch_dir)
         print(df.to_json(orient="records"))
     else:
-        result = _simulate(cfg)
+        result = simulate(cfg)
         payload = {
             "run_dir": str(result["run_dir"]),
             "final_residual": result["final_residual"],

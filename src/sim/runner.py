@@ -26,6 +26,7 @@ from coord.admm import ADMMConfig
 from nmpc.base import BaseController
 from nmpc.controller import NMPCConfig, NMPCController
 from nmpc.greedy import GreedyConfig, GreedyController
+from nmpc.b1 import B1Controller
 from utils import ensure_run_dir
 from utils.config import load_config
 from utils.logging_utils import setup_structured_logging
@@ -73,6 +74,100 @@ class ScenarioState:
     dso_env_specs: dict[int, dict[str, Any]] | None = None
 
 
+def _setup_dso_params(
+    dsos_cfg: list[dict[str, Any]], time_cfg: dict[str, Any], n_pred: int
+) -> list[DSOParameters]:
+    """Build a list of DSOParameters from configuration."""
+    dso_params: list[DSOParameters] = []
+    for d in dsos_cfg:
+        sens = {
+            "Rp": np.asarray(d["sens"]["Rp"], dtype=float),
+            "Rq": np.asarray(d["sens"].get("Rq", np.zeros_like(d["sens"]["Rp"])), dtype=float),
+            "vm_base": np.asarray(d["sens"]["vm_base"], dtype=float),
+        }
+        horizon_steps = int(n_pred)
+        # Profiles: accept inline arrays or a CSV path
+        prof = d.get("profiles", {})
+        if "csv" in prof:
+            # Load CSV with time column and align to horizon index
+            df_raw = pd.read_csv(prof["csv"], parse_dates=["time"])  # type: ignore[arg-type]
+            df_raw = df_raw.set_index("time")
+            idx = pd.date_range(
+                start=time_cfg["start"], periods=horizon_steps, freq=f"{time_cfg['dt_min']}min"
+            )
+            aligned = align_profiles(idx, {"load": df_raw["load"], "pv": df_raw["pv"]})
+            df = aligned.reset_index(drop=True)
+        else:
+            load_arr = np.asarray(prof.get("load", [0.0] * horizon_steps), dtype=float)
+            pv_arr = np.asarray(prof.get("pv", [0.0] * horizon_steps), dtype=float)
+            df = pd.DataFrame({"load": load_arr, "pv": pv_arr})
+        # Ensure length >= steps
+        if len(df) < horizon_steps:
+            raise ValueError("profiles length shorter than horizon steps")
+        horizon_obj = make_horizon(time_cfg["start"], horizon_steps, time_cfg["dt_min"])
+        dso_params.append(
+            DSOParameters(
+                sens=sens,
+                profiles=df,
+                horizon=horizon_obj,
+                vmin=float(d.get("vmin", 0.95)),
+                vmax=float(d.get("vmax", 1.05)),
+                penalty_voltage=float(d.get("penalty_voltage", 1e4)),
+                cost_coeff=float(d.get("cost_coeff", 50.0)),
+            )
+        )
+    return dso_params
+
+
+def _compute_ti_envelopes(
+    dso_params: list[DSOParameters],
+    dso_indices: np.ndarray,
+    dso_bus_indices: np.ndarray,
+    ti_cfg: dict[str, Any],
+    forecast_cfg: dict[str, Any],
+) -> dict[int, dict[str, Any]]:
+    """Precompute Trajectory-Independent envelope bounds for each DSO."""
+    scen_count = int(ti_cfg.get("scenario_count", 8))
+    alpha = float(ti_cfg.get("alpha", 1.0))
+    margin = float(ti_cfg.get("margin", 0.0))
+    sigL = float(forecast_cfg.get("sigma_load", 0.05))
+    sigPV = float(forecast_cfg.get("sigma_pv", 0.15))
+    rho_err = float(forecast_cfg.get("rho", 0.6))
+
+    # Build mapping slots per DSO index
+    slot_groups: dict[int, dict[str, Any]] = {}
+    size = len(dso_indices)
+    for slot in range(size):
+        di = int(dso_indices[slot])
+        bi = int(dso_bus_indices[slot])
+        group = slot_groups.setdefault(di, {"slots": [], "bus_indices": []})
+        group["slots"].append(slot)
+        group["bus_indices"].append(bi)
+
+    dso_env_specs: dict[int, dict[str, Any]] = {}
+    for di, group in slot_groups.items():
+        p = dso_params[di]
+        T = int(p.horizon.steps)
+        load_series = p.profiles["load"].iloc[:T]
+        pv_series = p.profiles["pv"].iloc[:T]
+        # Sample per-scenario series (assumed same across buses)
+        L = sample_forecast(
+            load_series, sigma=sigL, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=False
+        )
+        PV = sample_forecast(
+            pv_series, sigma=sigPV, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=True
+        )
+        # Net generation need (kW) assumed ~ max(load - pv, 0)
+        G = np.maximum(L - PV, 0.0)
+        # Build bounds per slot (bus)
+        m = len(group["bus_indices"])
+        # Scenarios are identical across buses; tile across bus dimension
+        G3 = np.repeat(G[:, :, None], m, axis=2)
+        low, up = compute_bounds_from_scenarios(G3, alpha=alpha, margin=margin)
+        dso_env_specs[di] = {"bus_indices": group["bus_indices"], "lower": low, "upper": up}
+    return dso_env_specs
+
+
 def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
     """Build an NMPC controller in either toy or integrated mode.
 
@@ -106,44 +201,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 upper_bounds = np.asarray(bounds_cfg["upper"], dtype=float)
 
         dsos_cfg = cfg["dsos"]
-        # Allow multiple interfaces per DSO; mapping will define slot ownership.
-
-        dso_params: list[DSOParameters] = []
-        for d in dsos_cfg:
-            sens = {
-                "Rp": np.asarray(d["sens"]["Rp"], dtype=float),
-                "Rq": np.asarray(d["sens"].get("Rq", np.zeros_like(d["sens"]["Rp"])), dtype=float),
-                "vm_base": np.asarray(d["sens"]["vm_base"], dtype=float),
-            }
-            horizon_steps = int(n_pred)
-            # Profiles: accept inline arrays or a CSV path
-            prof = d.get("profiles", {})
-            if "csv" in prof:
-                # Load CSV with time column and align to horizon index
-                df_raw = pd.read_csv(prof["csv"], parse_dates=["time"])  # type: ignore[arg-type]
-                df_raw = df_raw.set_index("time")
-                idx = pd.date_range(start=time_cfg["start"], periods=horizon_steps, freq=f"{time_cfg['dt_min']}min")
-                aligned = align_profiles(idx, {"load": df_raw["load"], "pv": df_raw["pv"]})
-                df = aligned.reset_index(drop=True)
-            else:
-                load_arr = np.asarray(prof.get("load", [0.0] * horizon_steps), dtype=float)
-                pv_arr = np.asarray(prof.get("pv", [0.0] * horizon_steps), dtype=float)
-                df = pd.DataFrame({"load": load_arr, "pv": pv_arr})
-            # Ensure length >= steps
-            if len(df) < horizon_steps:
-                raise ValueError("profiles length shorter than horizon steps")
-            horizon_obj = make_horizon(time_cfg["start"], horizon_steps, time_cfg["dt_min"])
-            dso_params.append(
-                DSOParameters(
-                    sens=sens,
-                    profiles=df,
-                    horizon=horizon_obj,
-                    vmin=float(d.get("vmin", 0.95)),
-                    vmax=float(d.get("vmax", 1.05)),
-                    penalty_voltage=float(d.get("penalty_voltage", 1e4)),
-                    cost_coeff=float(d.get("cost_coeff", 50.0)),
-                )
-            )
+        dso_params = _setup_dso_params(dsos_cfg, time_cfg, n_pred)
 
         size = len(boundary)
         # Coupling mapping: map each boundary bus to (dso_idx, dso_bus_idx)
@@ -171,45 +229,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
         tso_solver_options = solvers.get("tso_options", {})
         dso_solver_name = str(solvers.get("dso", "ipopt"))
 
-        # Precompute TI envelope bounds if enabled or required (OUR/B3)
-        dso_env_specs: dict[int, dict[str, Any]] = {}
+        # Precompute TI envelope bounds if enabled or required
         ti_cfg = cfg.get("ti_envelope", {}) | env_cfg
         ti_enabled = bool(ti_cfg.get("enabled", alg in {"OUR", "B3"}))
-        scen_count = int(ti_cfg.get("scenario_count", 8))
-        alpha = float(ti_cfg.get("alpha", 1.0))
-        margin = float(ti_cfg.get("margin", 0.0))
-        fcfg = cfg.get("forecast", {})
-        sigL = float(fcfg.get("sigma_load", 0.05))
-        sigPV = float(fcfg.get("sigma_pv", 0.15))
-        rho_err = float(fcfg.get("rho", 0.6))
-
-        # Build mapping slots per DSO index
-        slot_groups: dict[int, dict[str, Any]] = {}
-        size = len(boundary)
-        for slot in range(size):
-            di = int(dso_indices[slot])
-            bi = int(dso_bus_indices[slot])
-            group = slot_groups.setdefault(di, {"slots": [], "bus_indices": []})
-            group["slots"].append(slot)
-            group["bus_indices"].append(bi)
-
+        dso_env_specs: dict[int, dict[str, Any]] = {}
         if ti_enabled:
-            for di, group in slot_groups.items():
-                p = dso_params[di]
-                T = int(p.horizon.steps)
-                load_series = p.profiles["load"].iloc[:T]
-                pv_series = p.profiles["pv"].iloc[:T]
-                # Sample per-scenario series (assumed same across buses)
-                L = sample_forecast(load_series, sigma=sigL, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=False)
-                PV = sample_forecast(pv_series, sigma=sigPV, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=True)
-                # Net generation need (kW) assumed ~ max(load - pv, 0)
-                G = np.maximum(L - PV, 0.0)
-                # Build bounds per slot (bus)
-                m = len(group["bus_indices"])
-                # Scenarios are identical across buses; tile across bus dimension
-                G3 = np.repeat(G[:, :, None], m, axis=2)
-                low, up = compute_bounds_from_scenarios(G3, alpha=alpha, margin=margin)
-                dso_env_specs[di] = {"bus_indices": group["bus_indices"], "lower": low, "upper": up}
+            dso_env_specs = _compute_ti_envelopes(
+                dso_params, dso_indices, dso_bus_indices, ti_cfg, cfg.get("forecast", {})
+            )
 
         def tso_solver(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
             """Solve the DC TSO Pyomo model using ADMM iterate ``v`` as boundary targets."""
@@ -272,10 +299,9 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 except Exception as exc:
                     meta.setdefault("errors", []).append({"dso_index": di, "error": str(exc)})
                     logger.exception("DSO solver failed for index %d; using zero fallback", di)
-                    import pandas as _pd
                     Tloc = int(p.horizon.steps)
                     buses = sorted(range(len(p.sens["vm_base"])))
-                    zero = _pd.DataFrame(np.zeros((Tloc, len(buses))), index=range(Tloc), columns=buses)
+                    zero = pd.DataFrame(np.zeros((Tloc, len(buses))), index=range(Tloc), columns=buses)
 
                     class _Res:
                         def __init__(self, pg: _pd.DataFrame, error: str):
@@ -334,7 +360,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
 
         controller_factories: dict[str, Callable[[], BaseController]] = {
             "B0": lambda: GreedyController(greedy_cfg),
-            "B1": lambda: NMPCController(nmpc_cfg),
+            "B1": lambda: B1Controller(nmpc_cfg),
             "OUR": lambda: NMPCController(nmpc_cfg),
             "B3": lambda: NMPCController(nmpc_cfg),
         }
@@ -404,53 +430,8 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
     scenario: ScenarioState = state["scenario"]
     if scenario.step_ref is not None:
         scenario.step_ref["idx"] = t
-    # Centralized (B1): one-shot DSO then TSO
-    if getattr(scenario, "algorithm", "OUR") == "B1":
-        # Compute local DSO response ignoring TSO signal first
-        def _get_dso_vec() -> tuple[np.ndarray, Any]:
-            # Reuse the controller's dso_solver via a small proxy ADMM call
-            ctrl = scenario.controller
-            # Access underlying solver by using a zero vector through the public API
-            # Fall back: if controller lacks attribute, call run_step
-            try:
-                dso_solver = ctrl.config.dso_solver  # type: ignore[attr-defined]
-                dso_vec, dso_meta = dso_solver(np.zeros(ctrl.config.size))  # type: ignore[attr-defined]
-            except Exception:
-                step = ctrl.run_step()
-                dso_vec, dso_meta = step.dso_vector, step.dso_metadata
-            return dso_vec, dso_meta
 
-        dso_vec, dso_meta = _get_dso_vec()
-        # Feed to TSO as boundary targets
-        def _get_tso_vec() -> tuple[np.ndarray, Any]:
-            try:
-                tso_solver = scenario.controller.config.tso_solver  # type: ignore[attr-defined]
-                tso_vec, tso_meta = tso_solver(dso_vec)
-            except Exception:
-                tso_vec, tso_meta = dso_vec.copy(), {}
-            return tso_vec, tso_meta
-
-        tso_vec, tso_meta = _get_tso_vec()
-
-        # Craft result in NMPCStepResult-like shape
-        from nmpc.controller import NMPCStepResult
-        from coord.ti_env import update_envelope, create_envelope
-
-        if not hasattr(scenario.controller, "envelope"):
-            scenario.controller.envelope = create_envelope(size=dso_vec.shape[0])  # type: ignore[attr-defined]
-        scenario.controller.envelope = update_envelope(scenario.controller.envelope, dso_vec)  # type: ignore[attr-defined]
-        env = scenario.controller.envelope  # type: ignore[attr-defined]
-        result = NMPCStepResult(
-            tso_vector=tso_vec,
-            dso_vector=dso_vec,
-            residuals={"max": float(np.max(np.abs(tso_vec - dso_vec))), "mean": float(np.mean(np.abs(tso_vec - dso_vec))), "l2": float(np.linalg.norm(tso_vec - dso_vec))},
-            admm_history=[],
-            envelope=env,
-            tso_metadata=tso_meta,
-            dso_metadata=dso_meta,
-        )
-    else:
-        result = scenario.controller.run_step()
+    result = scenario.controller.run_step()
 
     scenario.history.append(
         {
@@ -473,7 +454,7 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
     }
 
 
-def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
+def simulate(cfg: dict[str, Any]) -> dict[str, Any]:
     seed = int(cfg.get("seed", 0))
     set_global_seed(seed)
 
@@ -636,4 +617,4 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
 
 def simulate_scenario(cfg_path: Path | str) -> dict[str, Any]:
     cfg = load_config(cfg_path)
-    return _simulate(cfg)
+    return simulate(cfg)

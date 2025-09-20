@@ -80,8 +80,9 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     model.Y = pyo.Param(model.B, model.B, initialize=Y_dict, mutable=False)
 
     target_map = {int(b): float(t) for b, t in zip(boundary, boundary_targets)}
-    lower_default = -np.inf if lower_bounds is None else lower_bounds
-    upper_default = np.inf if upper_bounds is None else upper_bounds
+
+    lower_default = np.full_like(boundary, -np.inf, dtype=float) if lower_bounds is None else lower_bounds
+    upper_default = np.full_like(boundary, np.inf, dtype=float) if upper_bounds is None else upper_bounds
     lower_map = {int(b): float(val) for b, val in zip(boundary, lower_default)}
     upper_map = {int(b): float(val) for b, val in zip(boundary, upper_default)}
     internal_map = {int(b): float(injections[b]) for b in internal_list}
