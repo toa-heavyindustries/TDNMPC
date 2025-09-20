@@ -55,6 +55,53 @@ def plot_voltage_heatmap(logs: pd.DataFrame, run_dir: Path) -> None:
     except Exception as e:
         print(f"Failed to generate voltage heatmap: {e}")
 
+def plot_pcc_trajectory(logs: pd.DataFrame, run_dir: Path) -> None:
+    """Plot actual, forecast, and envelope for the PCC power trajectory."""
+    if not all(col in logs.columns for col in ["dso_vector", "dso_h", "envelope_upper", "envelope_lower"]):
+        return
+
+    try:
+        # Use literal_eval to parse string-formatted list data
+        dso_vector = logs["dso_vector"].apply(literal_eval)
+        dso_h = logs["dso_h"].apply(literal_eval)
+        env_up = logs["envelope_upper"].apply(literal_eval)
+        env_low = logs["envelope_lower"].apply(literal_eval)
+
+        # Focus on the first interface (index 0)
+        if_idx = 0
+
+        actual_traj = [v[if_idx] for v in dso_vector]
+        upper_bound = [v[if_idx] for v in env_up]
+        lower_bound = [v[if_idx] for v in env_low]
+        steps = logs["step"].to_numpy()
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Plot actual trajectory and envelope
+        ax.plot(steps, actual_traj, "-o", markersize=4, label="Actual Power")
+        ax.fill_between(steps, lower_bound, upper_bound, color="gray", alpha=0.3, label="Envelope")
+
+        # Plot a representative forecast (e.g., from the last step)
+        forecast_step = len(logs) - 1
+        if forecast_step >= 0:
+            forecast_horizon = dso_h.iloc[forecast_step]
+            if forecast_horizon and len(forecast_horizon) > if_idx:
+                forecast_values = [h[if_idx] for h in forecast_horizon]
+                forecast_steps = range(forecast_step, forecast_step + len(forecast_values))
+                ax.plot(forecast_steps, forecast_values, "--d", markersize=4, label=f"Forecast at t={forecast_step}")
+
+        ax.set_xlabel("Simulation Step")
+        ax.set_ylabel(f"PCC Interface {if_idx} Power (kW)")
+        ax.set_title(f"PCC Interface {if_idx}: Actual vs. Forecast & Envelope")
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(run_dir / f"pcc_trajectory_if{if_idx}.png")
+        plt.close(fig)
+
+    except Exception as e:
+        print(f"Failed to generate PCC trajectory plot: {e}")
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     run_dir = args.run_dir
@@ -106,6 +153,7 @@ def main(argv: list[str] | None = None) -> None:
             pass
 
     plot_voltage_heatmap(logs, run_dir)
+    plot_pcc_trajectory(logs, run_dir)
 
 if __name__ == "__main__":
     main()
