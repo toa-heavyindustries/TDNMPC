@@ -8,3 +8,4 @@
 - Added deterministic config + logging scaffold (`configs/default.yaml`, `src/utils/random.py`, `src/utils/logging_utils.py`, `src/sim/runner.py`).
 - Passed standalone TSO/DSO power-flow checks with tightened voltage limits (`src/tso/network.py`, `src/dso/network.py`, `src/sim/base_networks.py`).
 - Built interface adapter utilities with tests (`src/interface/adapter.py`, `tests/test_interface_adapter.py`).
+- Upgraded LinDistFlow sensitivities with finite-difference controls and MAPE validation (`src/models/lindistflow.py`, `tests/test_lindistflow.py`, `scripts/build_dso.py`).

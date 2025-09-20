@@ -7,7 +7,13 @@ import pandapower as pp
 import pandas as pd
 
 
-def linearize_lindistflow(net: pp.pandapowerNet, base: pd.DataFrame) -> dict[str, np.ndarray]:
+def linearize_lindistflow(
+    net: pp.pandapowerNet,
+    base: pd.DataFrame,
+    *,
+    perturbation_mw: float = 0.5,
+    perturbation_mvar: float | None = None,
+) -> dict[str, np.ndarray]:
     """Compute sensitivity matrices for active/reactive injections to bus voltage magnitudes."""
 
     load_indices = net.load.index.to_numpy()
@@ -16,22 +22,30 @@ def linearize_lindistflow(net: pp.pandapowerNet, base: pd.DataFrame) -> dict[str
 
     vm_base = base.loc[pv_buses, "vm_pu"].to_numpy()
 
-    epsilon = 1e-4
-    sensitivities: list[np.ndarray] = []
-    for var in ["p_mw", "q_mvar"]:
+    dq_step = perturbation_mvar if perturbation_mvar is not None else perturbation_mw
+
+    def _central_difference(var: str, step: float) -> np.ndarray:
         jac = np.zeros((n_load, n_load))
         for col, load_idx in enumerate(load_indices):
-            original = net.load.at[load_idx, var]
-            net.load.at[load_idx, var] = original + epsilon
+            original = float(net.load.at[load_idx, var])
+            net.load.at[load_idx, var] = original + step
             pp.runpp(net, algorithm="nr", recycle=None, numba=False)
-            vm = net.res_bus.vm_pu.loc[pv_buses].to_numpy()
-            jac[:, col] = (vm - vm_base) / epsilon
+            vm_plus = net.res_bus.vm_pu.loc[pv_buses].to_numpy()
+
+            net.load.at[load_idx, var] = original - step
+            pp.runpp(net, algorithm="nr", recycle=None, numba=False)
+            vm_minus = net.res_bus.vm_pu.loc[pv_buses].to_numpy()
+
+            jac[:, col] = (vm_plus - vm_minus) / (2.0 * step)
             net.load.at[load_idx, var] = original
-        sensitivities.append(jac)
+        return jac
+
+    Rp = _central_difference("p_mw", max(perturbation_mw, 1e-4))
+    Rq = _central_difference("q_mvar", max(dq_step, 1e-4))
 
     pp.runpp(net, algorithm="nr", recycle=None, numba=False)
 
-    return {"Rp": sensitivities[0], "Rq": sensitivities[1], "vm_base": vm_base}
+    return {"Rp": Rp, "Rq": Rq, "vm_base": vm_base}
 
 
 def predict_voltage_delta(sens: dict[str, np.ndarray], dp: np.ndarray, dq: np.ndarray) -> np.ndarray:
@@ -45,8 +59,11 @@ def predict_voltage_delta(sens: dict[str, np.ndarray], dp: np.ndarray, dq: np.nd
 def validate_linearization(
     net: pp.pandapowerNet,
     sens: dict[str, np.ndarray],
-    n_samples: int = 20,
+    n_samples: int = 50,
     tol: float = 0.03,
+    *,
+    max_delta_mw: float = 0.5,
+    max_delta_mvar: float | None = None,
 ) -> dict[str, float]:
     """Validate the linearization by sampling random perturbations."""
 
@@ -61,9 +78,11 @@ def validate_linearization(
     base_p = net.load["p_mw"].to_numpy().copy()
     base_q = net.load["q_mvar"].to_numpy().copy()
 
+    dq_max = max_delta_mvar if max_delta_mvar is not None else max_delta_mw
+
     for _ in range(n_samples):
-        dp = rng.normal(scale=0.01, size=len(pv_buses))
-        dq = rng.normal(scale=0.01, size=len(pv_buses))
+        dp = rng.uniform(-max_delta_mw, max_delta_mw, size=len(pv_buses))
+        dq = rng.uniform(-dq_max, dq_max, size=len(pv_buses))
 
         net.load.loc[load_indices, "p_mw"] = base_p + dp
         net.load.loc[load_indices, "q_mvar"] = base_q + dq
@@ -73,7 +92,9 @@ def validate_linearization(
         vm_pred = vm_base + predict_voltage_delta(sens, dp, dq)
 
         diff = vm_actual - vm_pred
-        errors.append(float(np.mean(np.abs(diff))))
+        abs_base = np.maximum(vm_actual, 1e-6)
+        mape = np.abs(diff) / abs_base
+        errors.append(float(np.mean(mape)))
         max_errors.append(float(np.max(np.abs(diff))))
 
     net.load.loc[load_indices, "p_mw"] = base_p
@@ -82,5 +103,4 @@ def validate_linearization(
 
     mae = float(np.mean(errors))
     mmax = float(np.max(max_errors))
-    return {"mae": mae, "max": mmax, "passed": mae <= tol and mmax <= 2 * tol}
-
+    return {"mape": mae, "max_abs": mmax, "passed": mae <= tol and mmax <= 2 * tol}

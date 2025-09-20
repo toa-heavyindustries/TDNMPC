@@ -2,7 +2,7 @@
 
 Outputs:
 - data/<case>.json: serialized pandapower net
-- runs/<ts>/lin_check.json: summary pass/fail + mae/max
+- runs/<ts>/lin_check.json: summary pass/fail + mape/max
 - runs/<ts>/sensitivity_eval.csv: per-sample error metrics (l2, max_abs)
 - runs/<ts>/sensitivity_hist.png: histogram of max_abs error
 """
@@ -27,8 +27,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--case", choices=["ieee33"], default="ieee33", help="Network case")
     parser.add_argument("--out", type=Path, default=Path("data/ieee33.json"), help="Export path")
     parser.add_argument("--tag", default=None, help="Output run directory tag")
-    parser.add_argument("--samples", type=int, default=20, help="Validation sample size")
-    parser.add_argument("--tol", type=float, default=0.03, help="Validation tolerance")
+    parser.add_argument("--samples", type=int, default=50, help="Validation sample size")
+    parser.add_argument("--tol", type=float, default=0.03, help="Validation tolerance (MAPE)")
+    parser.add_argument("--delta-mw", type=float, default=0.5, help="Max active power perturbation (MW)")
+    parser.add_argument(
+        "--delta-mvar",
+        type=float,
+        default=None,
+        help="Optional max reactive power perturbation (MVAr)",
+    )
     return parser.parse_args(argv)
 
 
@@ -42,14 +49,26 @@ def main(argv: list[str] | None = None) -> None:
     base_pf = ac_power_flow(net)
     LOGGER.info("Base power flow computed. Min voltage: %.3f pu", base_pf["vm_pu"].min())
 
-    sens = linearize_lindistflow(net, base_pf)
+    sens = linearize_lindistflow(
+        net,
+        base_pf,
+        perturbation_mw=args.delta_mw,
+        perturbation_mvar=args.delta_mvar,
+    )
 
     export_net(net, args.out)
     LOGGER.info("Network exported to %s", args.out)
 
     run_dir = ensure_run_dir(args.tag)
     metrics_path = run_dir / "lin_check.json"
-    metrics = validate_linearization(net, sens, n_samples=args.samples, tol=args.tol)
+    metrics = validate_linearization(
+        net,
+        sens,
+        n_samples=args.samples,
+        tol=args.tol,
+        max_delta_mw=args.delta_mw,
+        max_delta_mvar=args.delta_mvar,
+    )
     metrics_path.write_text(json.dumps(metrics, indent=2))
     LOGGER.info("Validation metrics written to %s", metrics_path)
 
@@ -71,8 +90,9 @@ def main(argv: list[str] | None = None) -> None:
         records = []
         K = max(1, int(args.samples))
         for k in range(K):
-            dp = rng.normal(scale=0.01, size=n)
-            dq = rng.normal(scale=0.01, size=n)
+            dp = rng.uniform(-args.delta_mw, args.delta_mw, size=n)
+            dq_max = args.delta_mvar if args.delta_mvar is not None else args.delta_mw
+            dq = rng.uniform(-dq_max, dq_max, size=n)
 
             net.load.loc[load_idx, "p_mw"] = base_p + dp
             net.load.loc[load_idx, "q_mvar"] = base_q + dq
@@ -81,11 +101,16 @@ def main(argv: list[str] | None = None) -> None:
 
             vm_lin = vm_base + sens["Rp"] @ dp + sens["Rq"] @ dq
             err = vm_ac - vm_lin
-            records.append({
-                "sample": k,
-                "l2": float(np.linalg.norm(err)),
-                "max_abs": float(np.max(np.abs(err))),
-            })
+            abs_base = np.maximum(vm_ac, 1e-6)
+            mape = np.abs(err) / abs_base
+            records.append(
+                {
+                    "sample": k,
+                    "l2": float(np.linalg.norm(err)),
+                    "max_abs": float(np.max(np.abs(err))),
+                    "mape": float(np.mean(mape)),
+                }
+            )
 
         # Restore
         net.load.loc[load_idx, "p_mw"] = base_p

@@ -25,9 +25,15 @@ def test_linearization_accuracy() -> None:
     base = ac_power_flow(net)
     sens = linearize_lindistflow(net, base)
 
-    stats = validate_linearization(net, sens, n_samples=5, tol=0.03)
-    assert stats["mae"] <= 0.03
-    assert stats["max"] <= 0.06
+    stats = validate_linearization(
+        net,
+        sens,
+        n_samples=30,
+        tol=0.03,
+        max_delta_mw=0.5,
+    )
+    assert stats["mape"] <= 0.03
+    assert stats["max_abs"] <= 0.06
     assert stats["passed"]
 
 
@@ -41,4 +47,3 @@ def test_predict_voltage_delta_shapes() -> None:
     dq = np.zeros(n)
     delta = predict_voltage_delta(sens, dp, dq)
     assert delta.shape == (n,)
-
