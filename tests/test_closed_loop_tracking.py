@@ -16,13 +16,15 @@ def ensure_solver(name: str) -> None:
 
 def test_run_closed_loop_summary() -> None:
     ensure_solver("glpk")
-    result = run_closed_loop(steps=4, amplitude=0.5, solver="glpk")
+    load_profile = [12.0, 12.5, 13.0, 11.8]
+    result = run_closed_loop(steps=4, amplitude=0.0, solver="glpk", load_profile=load_profile, dt_min=10.0)
 
     history = result.history
     assert not history.empty
-    assert set(history.columns) >= {"step", "bus", "p_target", "p_tso", "residual"}
+    assert set(history.columns) >= {"step", "bus", "p_target", "p_tso", "residual", "p_request", "soc"}
 
     summary = result.summary
     assert summary["max_abs_residual"] <= 1e-3
     assert 0.9 <= summary["min_voltage"] <= 1.05
     assert summary["max_voltage"] <= 1.05
+    assert summary["soc_range"] >= 0.0

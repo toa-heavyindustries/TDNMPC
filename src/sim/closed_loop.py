@@ -43,6 +43,8 @@ def run_closed_loop(
     feeder_peak_mw: float = 20.0,
     solver: str = "glpk",
     envelope_margin: float = 0.5,
+    dt_min: float = 5.0,
+    load_profile: Sequence[float] | None = None,
 ) -> ClosedLoopResult:
     """Execute a simple closed-loop tracking sequence using box envelopes."""
 
@@ -70,6 +72,8 @@ def run_closed_loop(
     lower_bounds, upper_bounds = envelopes_to_bounds(envelopes, boundary_order)
 
     records: list[dict[str, float]] = []
+    dt_hours = dt_min / 60.0
+    soc: dict[int, float] = {int(bus): 0.0 for bus in boundary_order}
 
     for step in range(steps):
         phase = 2.0 * math.pi * (step / max(steps, 1))
@@ -81,7 +85,11 @@ def run_closed_loop(
 
         for env, feeder, bus in zip(envelopes, feeders, boundary_order):
             base_p, base_q, _ = measure_boundary(feeder.net)
-            target_p = base_p + offset
+            if load_profile is not None and step < len(load_profile):
+                target_raw = float(load_profile[step])
+            else:
+                target_raw = base_p + offset
+            target_p = target_raw
             target_p = min(env.p_max - envelope_margin, max(env.p_min + envelope_margin, target_p))
             measurement = apply_reference(feeder.net, target_p, base_q)
             dso_targets[bus] = measurement.p_mw
@@ -109,6 +117,7 @@ def run_closed_loop(
 
         flows = result.flows.loc[boundary_order]
         for idx, bus in enumerate(boundary_order):
+            soc[bus] += -flows.iloc[idx] * dt_hours
             records.append(
                 {
                     "step": step,
@@ -116,8 +125,10 @@ def run_closed_loop(
                     "p_target": boundary_targets[idx],
                     "p_tso": flows.iloc[idx],
                     "residual": flows.iloc[idx] - boundary_targets[idx],
+                    "p_request": target_raw,
                     "v_min": voltage_min,
                     "v_max": voltage_max,
+                    "soc": soc[bus],
                 }
             )
 
@@ -127,6 +138,9 @@ def run_closed_loop(
         "mean_abs_residual": float(history["residual"].abs().mean()) if not history.empty else 0.0,
         "min_voltage": float(history["v_min"].min()) if not history.empty else float("nan"),
         "max_voltage": float(history["v_max"].max()) if not history.empty else float("nan"),
+        "soc_min": float(history["soc"].min()) if not history.empty else float("nan"),
+        "soc_max": float(history["soc"].max()) if not history.empty else float("nan"),
+        "soc_range": float(history["soc"].max() - history["soc"].min()) if not history.empty else float("nan"),
     }
 
     return ClosedLoopResult(history=history, summary=summary, envelopes=envelopes, boundary_order=boundary_order)

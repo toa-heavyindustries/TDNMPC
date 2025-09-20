@@ -18,6 +18,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--amplitude", type=float, default=1.0, help="Power oscillation amplitude (MW)")
     parser.add_argument("--solver", default="glpk", help="Pyomo solver name")
     parser.add_argument("--feeder-peak", type=float, default=20.0, help="Feeder peak MW")
+    parser.add_argument("--dt-min", type=float, default=5.0, help="Time step in minutes")
+    parser.add_argument("--load-csv", type=Path, default=None, help="Optional CSV with load reference column")
     parser.add_argument("--tag", default=None, help="Run directory tag")
     parser.add_argument("--out", type=Path, default=Path("closed_loop.csv"), help="Relative output file name")
     return parser.parse_args(argv)
@@ -26,11 +28,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    load_profile = None
+    if args.load_csv is not None:
+        df = pd.read_csv(args.load_csv)
+        numeric_cols = df.select_dtypes(include="number")
+        if numeric_cols.empty:
+            raise ValueError("load CSV must contain at least one numeric column")
+        load_profile = numeric_cols.iloc[:, 0].to_numpy()[: args.steps]
+
     result = run_closed_loop(
         steps=args.steps,
         amplitude=args.amplitude,
         feeder_peak_mw=args.feeder_peak,
         solver=args.solver,
+        dt_min=args.dt_min,
+        load_profile=load_profile,
     )
 
     run_dir = ensure_run_dir(args.tag)
