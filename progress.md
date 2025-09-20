@@ -10,3 +10,4 @@
 - Built interface adapter utilities with tests (`src/interface/adapter.py`, `tests/test_interface_adapter.py`).
 - Upgraded LinDistFlow sensitivities with finite-difference controls and MAPE validation (`src/models/lindistflow.py`, `tests/test_lindistflow.py`, `scripts/build_dso.py`).
 - Integrated envelope pipeline with TSO bounds (`src/interface/envelope.py`, `scripts/build_envelope.py`, `src/opt/pyomo_tso.py`, `src/sim/runner.py`).
+- Verified envelope-constrained TSO/DSO tracking step (`tests/test_closed_loop_tracking.py`).
