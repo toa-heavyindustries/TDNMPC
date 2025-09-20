@@ -17,6 +17,7 @@ from pathlib import Path
 from dso import ac_power_flow, build_ieee33, export_net
 from models import linearize_lindistflow, validate_linearization
 from utils import ensure_run_dir
+import pandapower as pp
 
 LOGGER = logging.getLogger("dso")
 
