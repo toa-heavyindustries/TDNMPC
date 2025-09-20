@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from coord.admm import make_multi_dso, run_batch
+from coord.admm import make_multi_dso
+from utils.batch import run_batch
 
 
 def test_make_multi_dso_generates_variants():
@@ -25,4 +26,3 @@ def test_run_batch_creates_csv(tmp_path: Path) -> None:
     df = run_batch(simulator, seeds, tmp_path / "batch")
     assert (tmp_path / "batch" / "batch.csv").exists()
     assert len(df) == len(seeds)
-

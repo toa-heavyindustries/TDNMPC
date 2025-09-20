@@ -32,7 +32,7 @@ Requires-Dist: pypower>=5.1.19
 ## Step 1｜M1：时序曲线（Profiles）
 
 **目标**：生成/加载 24h 负荷、PV、温度曲线，保存 CSV 并可视化。
-**文件**：`io/profiles.py`, `scripts/make_profiles.py`
+**文件**：`profiles.py`, `scripts/make_profiles.py`
 **函数**
 
 ```python
@@ -46,7 +46,7 @@ def plot_profiles(series: dict[str, pd.Series], out: Path | None = None) -> None
 ```
 
 **调用**：`scripts/make_profiles.py` 调 `make_time_index→gen_*→save→plot`
-**运行**：`python -m tdnmpc.scripts.make_profiles --out data/profiles.csv`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.make_profiles --out data/profiles.csv`
 **期望输出**：`data/profiles.csv`、`runs/.../profiles.png`
 **验收**：列齐全（time, load, pv, temp），缺失值=0。
 
@@ -72,7 +72,7 @@ def validate_linearization(net, sens, n_samples: int = 20, tol: float = 0.03) ->
 ```
 
 **调用**：`build_ieee33→ac_power_flow→linearize→validate`
-**运行**：`python -m tdnmpc.scripts.build_dso --case ieee33 --out data/ieee33.pkl`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.build_dso --case ieee33 --out data/ieee33.pkl`
 **期望输出**：`data/ieee33.pkl`、`runs/.../lin_check.json`（误差统计）
 **验收**：平均电压误差 < 3%，最大 < 5%。
 
@@ -91,7 +91,7 @@ def mark_boundary_buses(case: dict, bus_ids: list[int]) -> dict
 ```
 
 **调用**：`build_tso_case→mark_boundary_buses→dc_power_flow`
-**运行**：`python -m tdnmpc.scripts.build_tso --n-bus 30`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.build_tso --n-bus 30`
 **期望输出**：DC 潮流可运行，返回边界母线表。
 **验收**：功率平衡残差 < 1e-6。
 
@@ -185,7 +185,7 @@ def admm_converged(history: list[dict], atol: float = 1e-3) -> bool
 ```
 
 **调用**：闭环 `tso_solve` / `dso_solve`，更新 `z,u`。
-**运行**：`python -m tdnmpc.scripts.run_admm --T 12`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_admm --T 12`
 **期望输出**：`primal/dual residual` 随迭代下降曲线。
 **验收**：残差 < 1e-3（或 50 步内单调下降）。
 
@@ -194,7 +194,7 @@ def admm_converged(history: list[dict], atol: float = 1e-3) -> bool
 ## Step 9｜Trajectory-Independent（TI）包络约束
 
 **目标**：构建参考无关的安全包络并随时间滚动收紧。
-**文件**：`ctrl/ti_envelope.py`
+**文件**：`coord/ti_env.py`
 **函数**
 
 ```python
@@ -212,7 +212,7 @@ def update_envelope(env: dict, new_obs: dict) -> dict
 ## Step 10｜NMPC 控制器封装
 
 **目标**：把预测、优化、施控打成一步（单 DSO 或耦合后）。
-**文件**：`ctrl/nmpc.py`
+**文件**：`nmpc/controller.py`
 **函数**
 
 ```python
@@ -256,7 +256,7 @@ def simulate_scenario(cfg_path: Path) -> dict[str, Any]
 def simulate_step(state: dict, t: int) -> dict
 ```
 
-**运行**：`python -m tdnmpc.scripts.run_experiment --cfg cfg/demo.yaml`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_experiment --cfg cfg/demo.yaml`
 **期望输出**：`runs/<tag>/logs.csv`、中间控制量、接口残差。
 **验收**：整套无异常，关键指标生成。
 
@@ -286,12 +286,12 @@ def plot_convergence(hist: pd.DataFrame, out: Path) -> None
 ## Step 14｜多 DSO 扩展与批处理
 
 **目标**：支持 N 个 DSO + 一个 TSO，批量跑不同随机种子/场景。
-**文件**：`coord/admm.py`（多从属）、`scripts/run_experiment.py`（增加 `--seeds`）
+**文件**：`coord/admm.py`（多从属）、`utils/batch.py`（批处理入口）、`scripts/run_experiment.py`（增加 `--seeds`）
 **函数**
 
 ```python
-def make_multi_dso(n: int) -> list["pp.pandapowerNet"]
-def run_batch(cfg: Path, seeds: list[int]) -> pd.DataFrame
+def make_multi_dso(n: int, base_targets: np.ndarray) -> list[np.ndarray]
+def run_batch(simulator: Callable[[int], dict[str, Any]], seeds: Sequence[int], run_dir: Path) -> pd.DataFrame
 ```
 
 **验收**：批量完成，生成 `runs/<tag>/batch.csv`。

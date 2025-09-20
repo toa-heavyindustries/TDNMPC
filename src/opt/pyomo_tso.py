@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
+
+from utils.pyomo_utils import array_to_indexed_dict
 
 
 @dataclass
@@ -74,7 +76,7 @@ def build_tso_model(params: TSOParameters) -> pyo.ConcreteModel:
     model.boundary = pyo.Set(within=model.B, initialize=boundary_list)
     model.internal = pyo.Set(within=model.B, initialize=internal_list)
 
-    Y_dict = {(i, j): float(Y[i, j]) for i in all_buses for j in all_buses}
+    Y_dict = array_to_indexed_dict(Y, (all_buses, all_buses))
     model.Y = pyo.Param(model.B, model.B, initialize=Y_dict, mutable=False)
 
     target_map = {int(b): float(t) for b, t in zip(boundary, boundary_targets)}
@@ -132,12 +134,18 @@ def solve_tso_model(
         raise RuntimeError(f"Solver {solver} is not available")
 
     results = solver_obj.solve(model, tee=False, options=options or {})
-    if (
-        results.solver.termination_condition
-        == pyo.TerminationCondition.unbounded
-    ):
-        raise RuntimeError("TSO optimisation failed: problem unbounded")
-    # Allow other non-optimal statuses like maxIterations to pass as warnings
+    termination = results.solver.termination_condition
+    status = results.solver.status
+    accepted = {
+        pyo.TerminationCondition.optimal,
+        pyo.TerminationCondition.feasible,
+        pyo.TerminationCondition.locallyOptimal,
+    }
+    if status != pyo.SolverStatus.ok or termination not in accepted:
+        raise RuntimeError(
+            "TSO optimisation failed: "
+            f"status={status}, termination={termination}"
+        )
     return results
 
 

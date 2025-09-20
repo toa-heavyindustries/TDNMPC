@@ -16,13 +16,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import json
 import numpy as np
 import pandas as pd
 
 from coord.admm import ADMMConfig
+from nmpc.base import BaseController
 from nmpc.controller import NMPCConfig, NMPCController
 from nmpc.greedy import GreedyConfig, GreedyController
 from utils import ensure_run_dir
@@ -48,9 +49,12 @@ from sim.forecast import sample_forecast
 from coord.ti_env import compute_bounds_from_scenarios
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class ScenarioState:
-    controller: NMPCController
+    controller: BaseController
     history: list[dict[str, Any]]
     # Toy mode references
     tso_targets: list[np.ndarray] | None = None
@@ -116,8 +120,6 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             prof = d.get("profiles", {})
             if "csv" in prof:
                 # Load CSV with time column and align to horizon index
-                import pandas as pd
-
                 df_raw = pd.read_csv(prof["csv"], parse_dates=["time"])  # type: ignore[arg-type]
                 df_raw = df_raw.set_index("time")
                 idx = pd.date_range(start=time_cfg["start"], periods=horizon_steps, freq=f"{time_cfg['dt_min']}min")
@@ -126,8 +128,6 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             else:
                 load_arr = np.asarray(prof.get("load", [0.0] * horizon_steps), dtype=float)
                 pv_arr = np.asarray(prof.get("pv", [0.0] * horizon_steps), dtype=float)
-                import pandas as pd
-
                 df = pd.DataFrame({"load": load_arr, "pv": pv_arr})
             # Ensure length >= steps
             if len(df) < horizon_steps:
@@ -187,11 +187,11 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
         slot_groups: dict[int, dict[str, Any]] = {}
         size = len(boundary)
         for slot in range(size):
-            di = int(dso_indices[slot]) if 'dso_indices' in locals() or 'dso_indices' in globals() else slot
-            bi = int(dso_bus_indices[slot]) if 'dso_bus_indices' in locals() or 'dso_bus_indices' in globals() else 0
-            g = slot_groups.setdefault(di, {"slots": [], "bus_indices": []})
-            g["slots"].append(slot)
-            g["bus_indices"].append(bi)
+            di = int(dso_indices[slot])
+            bi = int(dso_bus_indices[slot])
+            group = slot_groups.setdefault(di, {"slots": [], "bus_indices": []})
+            group["slots"].append(slot)
+            group["bus_indices"].append(bi)
 
         if ti_enabled:
             for di, group in slot_groups.items():
@@ -231,10 +231,10 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 obj = res.objective if hasattr(res, "objective") else None
                 theta_meta = res.theta.to_dict()
             except Exception as exc:
-                # Solver unavailable or failed: produce zero vector fallback
+                logger.exception("TSO solver failed; returning zero vector fallback")
                 flows_vec = np.zeros(len(boundary), dtype=float)
                 obj = None
-                theta_meta = {}
+                theta_meta = {"error": str(exc)}
             # Build a horizon-repeated matrix for convenience (same static DC per step)
             T = int(dso_params[0].horizon.steps) if dso_params else 1
             flows_mat = np.tile(flows_vec[None, :], (T, 1))
@@ -270,17 +270,21 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                     solve_dso_model(model, solver=dso_solver_name)
                     res = extract_dso_solution(model, p)
                 except Exception as exc:
-                    # Fallback: zero injections time series with correct shape
+                    meta.setdefault("errors", []).append({"dso_index": di, "error": str(exc)})
+                    logger.exception("DSO solver failed for index %d; using zero fallback", di)
                     import pandas as _pd
                     Tloc = int(p.horizon.steps)
                     buses = sorted(range(len(p.sens["vm_base"])))
                     zero = _pd.DataFrame(np.zeros((Tloc, len(buses))), index=range(Tloc), columns=buses)
+
                     class _Res:
-                        def __init__(self, pg: _pd.DataFrame):
+                        def __init__(self, pg: _pd.DataFrame, error: str):
                             self.p_injections = pg
                             self.voltage = pg  # Use same shape for voltage fallback
                             self.objective = 0.0
-                    res = _Res(zero)
+                            self.error = error
+
+                    res = _Res(zero, str(exc))
                 solved.append((p, res))
                 meta["dso_objs"].append(res.objective)
                 meta["dso_voltages"].append(res.voltage.to_dict(orient="split"))
@@ -311,28 +315,35 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             tol_dual=float(admm_dict.get("tol_dual", 1e-4)),
         )
 
-        # Algorithm-specific controller
-        if alg == "B0":
-            gcfg = GreedyConfig(
-                size=size,
-                dso_solver=dso_solver,
-                envelope_margin=float(env_cfg.get("margin", 0.05)),
-                envelope_alpha=float(env_cfg.get("alpha", 0.3)),
-            )
-            controller = GreedyController(gcfg)  # type: ignore[assignment]
-        else:
-            nmpc_cfg = NMPCConfig(
-                size=size,
-                admm=admm_cfg,
-                tso_solver=tso_solver,
-                dso_solver=dso_solver,
-                envelope_margin=float(env_cfg.get("margin", 0.05)),
-                envelope_alpha=float(env_cfg.get("alpha", 0.3)),
-            )
-            controller = NMPCController(nmpc_cfg)
+        margin = float(env_cfg.get("margin", 0.05))
+        alpha_env = float(env_cfg.get("alpha", 0.3))
+        greedy_cfg = GreedyConfig(
+            size=size,
+            dso_solver=dso_solver,
+            envelope_margin=margin,
+            envelope_alpha=alpha_env,
+        )
+        nmpc_cfg = NMPCConfig(
+            size=size,
+            admm=admm_cfg,
+            tso_solver=tso_solver,
+            dso_solver=dso_solver,
+            envelope_margin=margin,
+            envelope_alpha=alpha_env,
+        )
+
+        controller_factories: dict[str, Callable[[], BaseController]] = {
+            "B0": lambda: GreedyController(greedy_cfg),
+            "B1": lambda: NMPCController(nmpc_cfg),
+            "OUR": lambda: NMPCController(nmpc_cfg),
+            "B3": lambda: NMPCController(nmpc_cfg),
+        }
+        default_builder = controller_factories["OUR"]
+        controller_builder = controller_factories.get(alg, default_builder)
+        controller = controller_builder()
 
         return ScenarioState(
-            controller=controller,  # type: ignore[arg-type]
+            controller=controller,
             history=[],
             tso_base={"Y": Y, "inj": injections, "boundary": boundary, "cost": cost_coeff},
             dso_params=dso_params,
@@ -512,7 +523,6 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
                 admm_histories.append(result.admm_history)
 
     history = state["scenario"].history
-    import pandas as pd
     df = pd.DataFrame(history)
     df.to_csv(run_dir / "logs.csv", index=False)
     if not df.empty:
@@ -590,7 +600,6 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
         pass
 
     # Save ADMM per-iteration histories and combined artifacts
-    import pandas as pd
     combined_rows: list[dict[str, float]] = []
     for t, hist in enumerate(admm_histories):
         if not hist:

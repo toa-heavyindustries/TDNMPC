@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
 
+from utils.pyomo_utils import array_to_indexed_dict
 from utils.timewin import Horizon
 
 
@@ -67,11 +68,13 @@ def build_dso_model(params: DSOParameters) -> pyo.ConcreteModel:
     model.B = pyo.Set(initialize=range(n_bus))
     model.T = pyo.Set(initialize=range(steps))
 
-    load_dict = {(b, t): float(load_matrix[b, t]) for b in range(n_bus) for t in range(steps)}
-    pv_dict = {(b, t): float(pv_matrix[b, t]) for b in range(n_bus) for t in range(steps)}
-    vm_base_dict = {b: float(vm_base[b]) for b in range(n_bus)}
-    Rp_dict = {(b, j): float(Rp[b, j]) for b in range(n_bus) for j in range(n_bus)}
-    Rq_dict = {(b, j): float(Rq[b, j]) for b in range(n_bus) for j in range(n_bus)}
+    buses = tuple(range(n_bus))
+    times = tuple(range(steps))
+    load_dict = array_to_indexed_dict(load_matrix, (buses, times))
+    pv_dict = array_to_indexed_dict(pv_matrix, (buses, times))
+    vm_base_dict = array_to_indexed_dict(vm_base, (buses,))
+    Rp_dict = array_to_indexed_dict(Rp, (buses, buses))
+    Rq_dict = array_to_indexed_dict(Rq, (buses, buses))
 
     model.p_load = pyo.Param(model.B, model.T, initialize=load_dict, mutable=False)
     model.p_pv = pyo.Param(model.B, model.T, initialize=pv_dict, mutable=False)

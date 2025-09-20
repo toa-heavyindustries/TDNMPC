@@ -5,12 +5,13 @@ Produces an NMPCStepResult-compatible structure so it can reuse logging/plots.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
-from coord.ti_env import Envelope, create_envelope, update_envelope
+from nmpc.base import BaseController, EnvelopeConfig
 from nmpc.controller import NMPCStepResult
 
 
@@ -25,22 +26,23 @@ class GreedyConfig:
     envelope_alpha: float = 0.3
 
 
-class GreedyController:
+class GreedyController(BaseController):
     def __init__(self, config: GreedyConfig):
-        if config.size <= 0:
-            raise ValueError("config.size must be positive")
-        self.config = config
-        self.envelope: Envelope = create_envelope(
-            size=config.size, margin=config.envelope_margin, alpha=config.envelope_alpha
+        envelope_cfg = EnvelopeConfig(
+            size=config.size,
+            margin=config.envelope_margin,
+            alpha=config.envelope_alpha,
         )
+        super().__init__(envelope_cfg)
+        self.config = config
 
     def run_step(self) -> NMPCStepResult:
         # Greedy: ignore TSO signals, just compute local DSO action once.
-        zero = np.zeros(self.config.size, dtype=float)
+        zero = np.zeros(self.size, dtype=float)
         dso_vec, dso_meta = self.config.dso_solver(zero)
         tso_vec = dso_vec.copy()
 
-        self.envelope = update_envelope(self.envelope, dso_vec)
+        self.update_envelope(dso_vec)
 
         return NMPCStepResult(
             tso_vector=tso_vec,
@@ -51,4 +53,3 @@ class GreedyController:
             tso_metadata={},
             dso_metadata=dso_meta,
         )
-

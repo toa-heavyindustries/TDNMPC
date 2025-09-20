@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
 from coord.admm import ADMMConfig, run_admm
 from coord.interface import coupling_residuals
-from coord.ti_env import Envelope, create_envelope, update_envelope
+from coord.ti_env import Envelope
+from nmpc.base import BaseController, EnvelopeConfig
 
 
 TSOSolver = Callable[[np.ndarray], tuple[np.ndarray, Any]]
@@ -59,16 +61,17 @@ class NMPCStepResult:
     dso_metadata: Any
 
 
-class NMPCController:
+class NMPCController(BaseController):
     """High-level orchestrator executing a single ADMM-based NMPC step."""
 
     def __init__(self, config: NMPCConfig):
-        if config.size <= 0:
-            raise ValueError("config.size must be positive")
-        self.config = config
-        self.envelope = create_envelope(
-            size=config.size, margin=config.envelope_margin, alpha=config.envelope_alpha
+        envelope_cfg = EnvelopeConfig(
+            size=config.size,
+            margin=config.envelope_margin,
+            alpha=config.envelope_alpha,
         )
+        super().__init__(envelope_cfg)
+        self.config = config
 
     def run_step(self, initial_guess: np.ndarray | None = None) -> NMPCStepResult:
         size = self.config.size
@@ -106,7 +109,7 @@ class NMPCController:
         dso_meta = last_dso_meta
 
         residual = coupling_residuals(tso_vec, dso_vec)
-        self.envelope = update_envelope(self.envelope, dso_vec)
+        self.update_envelope(dso_vec)
 
         return NMPCStepResult(
             tso_vector=tso_vec,
@@ -117,4 +120,3 @@ class NMPCController:
             tso_metadata=tso_meta,
             dso_metadata=dso_meta,
         )
-

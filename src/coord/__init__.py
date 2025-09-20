@@ -1,6 +1,8 @@
 """Coordination helpers for TSO-DSO coupling."""
 
-from .admm import ADMMConfig, run_admm, make_multi_dso, run_batch
+from utils.batch import run_batch
+
+from .admm import ADMMConfig, make_multi_dso, run_admm
 from .interface import (
     aggregate_dsos_to_tso,
     coupling_residuals,

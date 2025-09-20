@@ -8,11 +8,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
-from coord.admm import run_batch
 from sim.runner import _simulate
 from utils import ensure_run_dir
+from utils.batch import run_batch
 from utils.config import load_config
 
 
@@ -44,7 +42,8 @@ def main(argv: list[str] | None = None) -> None:
         def simulator(seed: int) -> dict[str, Any]:
             cfg_copy = copy.deepcopy(cfg)
             cfg_copy.setdefault("run", {})
-            cfg_copy["run"].update({"tag": f"{run_cfg.get('tag', 'run')}-s{seed}", "base": str(base_dir)})
+            run_tag = run_cfg.get("tag", "run")
+            cfg_copy["run"].update({"tag": f"{run_tag}-s{seed}", "base": str(base_dir)})
             cfg_copy["seed"] = seed
             result = _simulate(cfg_copy)
             return {
@@ -56,9 +55,12 @@ def main(argv: list[str] | None = None) -> None:
         print(df.to_json(orient="records"))
     else:
         result = _simulate(cfg)
-        print(json.dumps({"run_dir": str(result["run_dir"]), "final_residual": result["final_residual"]}, indent=2))
+        payload = {
+            "run_dir": str(result["run_dir"]),
+            "final_residual": result["final_residual"],
+        }
+        print(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":
     main()
-

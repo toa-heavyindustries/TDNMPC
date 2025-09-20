@@ -99,8 +99,8 @@ markers = [
 # ---------------------------
 [tool.coverage.run]
 branch = true
-# 你的包目录是 app/，此前写成 src 会统计不到
-source = ["app"]
+# 你的包目录是 src/
+source = ["src"]
 
 [tool.coverage.report]
 show_missing = true

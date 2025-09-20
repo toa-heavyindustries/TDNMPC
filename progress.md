@@ -14,3 +14,10 @@
 - Added multi-step closed-loop simulator with forecast inputs & SoC KPIs (`src/sim/closed_loop.py`, `scripts/run_closed_loop.py`).
 - Added tube-tightening metrics (sigma_p95, envelope shrink/noise hooks) to closed-loop flow (`src/sim/closed_loop.py`, `scripts/run_closed_loop.py`).
 - Added Monte Carlo shrink sweep utility and test (`scripts/tune_shrink.py`, `tests/test_tune_shrink.py`).
+
+## Solver Robustness & Controller Refactor
+- Added shared Pyomo dict utility and tightened solver status checks (`src/utils/pyomo_utils.py`, `src/opt/pyomo_tso.py`, `src/opt/pyomo_dso.py`).
+- Logged TSO/DSO solver failures with safe fallbacks and cleaned controller factory (`src/sim/runner.py`).
+- Introduced reusable controller base class to unify envelope handling (`src/nmpc/base.py`, `src/nmpc/controller.py`, `src/nmpc/greedy.py`).
+- Relocated batch runner to utilities and updated callers (`src/utils/batch.py`, `src/coord/admm.py`, `src/coord/__init__.py`, `scripts/run_experiment.py`, `tests/test_batch.py`).
+- Synced README run instructions and module references with current layout (`README.md`).
