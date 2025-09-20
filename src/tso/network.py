@@ -146,6 +146,12 @@ def build_tso_pandapower(
         raise ValueError(f"Unsupported TSO case: {case_name}") from exc
 
     net = factory()
+    if "min_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "min_vm_pu"] = 0.95
+    if "max_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "max_vm_pu"] = 1.05
+    if "vm_pu" in net.gen.columns:
+        net.gen.loc[:, "vm_pu"] = np.minimum(net.gen["vm_pu"].to_numpy(), 1.028)
     boundaries = _resolve_boundary_buses(net, case_key, boundary_buses)
 
     net.bus["is_boundary"] = False

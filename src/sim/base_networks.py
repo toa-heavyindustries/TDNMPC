@@ -67,7 +67,7 @@ def plan_baseline_coupled_system(
     *,
     boundary_buses: Sequence[int | str] | None = None,
     feeder_type: Literal["mv", "lv"] = "mv",
-    feeder_peak_mw: float = 30.0,
+    feeder_peak_mw: float = 20.0,
     feeder_cos_phi: float = 0.95,
     transformer_spec: TransformerSpec | None = None,
 ) -> BaselineCoupledSystem:

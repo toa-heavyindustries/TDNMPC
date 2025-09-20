@@ -13,6 +13,7 @@ Two operation modes are supported:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ from nmpc.controller import NMPCConfig, NMPCController
 from nmpc.greedy import GreedyConfig, GreedyController
 from utils import ensure_run_dir
 from utils.config import load_config
+from utils.logging_utils import setup_structured_logging
+from utils.random import set_global_seed
 from utils.timewin import make_horizon, align_profiles
 from viz.plots import plot_convergence
 from opt.pyomo_tso import (
@@ -450,24 +453,67 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
 
 
 def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
+    seed = int(cfg.get("seed", 0))
+    set_global_seed(seed)
+
     state = {"scenario": _build_controller(cfg)}
+
+    time_cfg = cfg.get("time", {})
+    steps = int(time_cfg.get("steps", 0))
+    dt_min = time_cfg.get("dt_min")
 
     run_cfg = cfg.get("run", {})
     run_dir = ensure_run_dir(tag=run_cfg.get("tag"), base=run_cfg.get("base", "runs"))
 
-    steps = cfg["time"]["steps"]
+    log_cfg = cfg.get("logging", {})
+    log_base = Path(log_cfg.get("base_dir", "logs"))
+    log_dir = log_base / run_dir.name
+    level_name = str(log_cfg.get("level", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logger = setup_structured_logging(
+        log_dir,
+        log_file=log_cfg.get("log_file", "runner.log"),
+        level=level,
+    )
+    logger.info(
+        "Simulation run created | seed=%d | steps=%d | dt_min=%s | run_dir=%s",
+        seed,
+        steps,
+        dt_min,
+        run_dir,
+    )
+
     admm_histories: list[list[dict[str, float]]] = []
     for t in range(steps):
         ret = simulate_step(state, t)
         # Capture ADMM iteration history for this step (if available)
         result = ret.get("result")
-        if result is not None and hasattr(result, "admm_history"):
-            admm_histories.append(result.admm_history)
+        if result is not None:
+            if hasattr(result, "residuals"):
+                res = result.residuals
+                logger.info(
+                    "Step %d/%d | residual_max=%.3e | residual_mean=%.3e",
+                    t + 1,
+                    steps,
+                    float(res.get("max", 0.0)),
+                    float(res.get("mean", 0.0)),
+                )
+            if hasattr(result, "admm_history"):
+                admm_histories.append(result.admm_history)
 
     history = state["scenario"].history
     import pandas as pd
     df = pd.DataFrame(history)
     df.to_csv(run_dir / "logs.csv", index=False)
+    if not df.empty:
+        metrics_cols = [col for col in ["step", "residual_max", "residual_mean"] if col in df.columns]
+        if metrics_cols:
+            metrics_df = df[metrics_cols].copy()
+            metrics_df.to_csv(
+                log_dir / log_cfg.get("metrics_file", "metrics.csv"),
+                index=False,
+            )
+            logger.info("Metrics written to %s", log_dir / log_cfg.get("metrics_file", "metrics.csv"))
 
     # Expand vectors to wide trace for convenience
     if not df.empty:
@@ -504,6 +550,12 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
         "interfaces": int(len(history[-1]["tso_vector"])) if history else 0,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    logger.info(
+        "Summary | final_residual=%.3e | mean_residual=%s | interfaces=%d",
+        summary["final_residual"],
+        f"{summary['mean_residual']:.3e}" if summary["mean_residual"] is not None else "n/a",
+        summary["interfaces"],
+    )
 
     # Figures
     figs = run_dir / "figs"

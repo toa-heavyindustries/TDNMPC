@@ -227,7 +227,7 @@ class DsoFeeder:
 def build_cigre_feeder(
     feeder_type: Literal["mv", "lv"] = "mv",
     *,
-    target_peak_mw: float = 30.0,
+    target_peak_mw: float | None = None,
     cos_phi: float = 0.95,
     with_der: bool = False,
 ) -> DsoFeeder:
@@ -237,12 +237,20 @@ def build_cigre_feeder(
     if feeder_key not in {"mv", "lv"}:
         raise ValueError("feeder_type must be 'mv' or 'lv'")
 
+    if target_peak_mw is None:
+        target_peak_mw = 30.0 if feeder_key == "mv" else 0.4
+
     if feeder_key == "mv":
         net = pn.create_cigre_network_mv(with_der=with_der)
     else:
         if with_der:
             raise ValueError("with_der is not supported for CIGRE LV templates")
         net = pn.create_cigre_network_lv()
+
+    if "min_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "min_vm_pu"] = 0.95
+    if "max_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "max_vm_pu"] = 1.05
 
     _scale_feeder_loads(net, target_peak_mw, cos_phi)
 

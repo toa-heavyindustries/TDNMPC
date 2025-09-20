@@ -1,0 +1,43 @@
+seed: 42
+clock:
+  timezone: "UTC"
+
+time:
+  start: "2025-01-01T00:00:00"
+  dt_min: 5
+  steps: 12
+N_pred: 12
+
+solvers:
+  tso: "ipopt"
+  dso: "ipopt"
+  tso_options:
+    max_iter: 100
+  dso_options:
+    max_iter: 100
+
+logging:
+  base_dir: "logs"
+  log_file: "runner.log"
+  metrics_file: "metrics.csv"
+  level: "INFO"
+
+networks:
+  tso_case: "case39"
+  boundary_buses: [16, 18, 21]
+  feeder_type: "mv"
+  feeder_peak_mw: 20.0
+  feeder_cos_phi: 0.95
+
+profiles:
+  load: "data/loads.csv"
+  pv: "data/pv.csv"
+  temp: "data/temp.csv"
+
+run:
+  base: "runs"
+
+forecast:
+  sigma_load: 0.05
+  sigma_pv: 0.15
+  rho: 0.6
