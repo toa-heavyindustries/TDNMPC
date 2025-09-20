@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from pathlib import Path
+from typing import Any, Callable
 
 import numpy as np
+import pandas as pd
 
 
 @dataclass(slots=True)
@@ -98,3 +100,29 @@ def run_admm(
         "iterations": len(history),
     }
 
+
+
+@dataclass(slots=True)
+class BatchResult:
+    run_dir: Path
+    seeds: list[int]
+    records: list[dict[str, Any]]
+
+
+def make_multi_dso(n: int, base_targets: np.ndarray) -> list[np.ndarray]:
+    rng = np.random.default_rng(42)
+    return [base_targets + rng.normal(scale=0.05, size=base_targets.shape) for _ in range(n)]
+
+
+def run_batch(
+    simulator: Callable[[int], dict[str, Any]], seeds: list[int], run_dir: Path
+) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for seed in seeds:
+        result = simulator(seed)
+        record = {"seed": seed, **result}
+        records.append(record)
+    df = pd.DataFrame(records)
+    df.to_csv(run_dir / "batch.csv", index=False)
+    return df

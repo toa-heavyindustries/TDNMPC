@@ -1,6 +1,6 @@
 """Coordination helpers for TSO-DSO coupling."""
 
-from .admm import ADMMConfig, run_admm
+from .admm import ADMMConfig, run_admm, make_multi_dso, run_batch
 from .interface import (
     aggregate_dsos_to_tso,
     coupling_residuals,
@@ -15,4 +15,6 @@ __all__ = [
     "coupling_residuals",
     "ADMMConfig",
     "run_admm",
+    "make_multi_dso",
+    "run_batch",
 ]
