@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from ast import literal_eval
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -32,14 +33,39 @@ def main(argv: list[str] | None = None) -> None:
     fig.savefig(run_dir / "residuals.png")
     plt.close(fig)
 
-    # Quick-check plot for envelope bounds range per step (optional)
-    try:
-        upper = logs["envelope_upper"].apply(lambda x: len(str(x)))
-        lower = logs["envelope_lower"].apply(lambda x: len(str(x)))
-    except KeyError:
-        return
+    # Parse vector columns and plot per-interface time series
+    if {"tso_vector", "dso_vector"}.issubset(logs.columns):
+        try:
+            tso_vectors = logs["tso_vector"].apply(literal_eval)
+            dso_vectors = logs["dso_vector"].apply(literal_eval)
+            n_if = len(tso_vectors.iloc[0])
+            ts = logs["step"].to_numpy()
+            # TSO vectors
+            fig, ax = plt.subplots(figsize=(9, 4))
+            for i in range(n_if):
+                ax.plot(ts, [v[i] for v in tso_vectors], label=f"tso_{i}")
+            ax.set_xlabel("step")
+            ax.set_ylabel("TSO boundary (kW)")
+            ax.grid(True, linestyle="--", alpha=0.4)
+            ax.legend(ncol=2, fontsize=8)
+            fig.tight_layout()
+            fig.savefig(run_dir / "tso_interfaces.png")
+            plt.close(fig)
+
+            # DSO vectors
+            fig, ax = plt.subplots(figsize=(9, 4))
+            for i in range(n_if):
+                ax.plot(ts, [v[i] for v in dso_vectors], label=f"dso_{i}")
+            ax.set_xlabel("step")
+            ax.set_ylabel("DSO boundary (kW)")
+            ax.grid(True, linestyle="--", alpha=0.4)
+            ax.legend(ncol=2, fontsize=8)
+            fig.tight_layout()
+            fig.savefig(run_dir / "dso_interfaces.png")
+            plt.close(fig)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
     main()
-
