@@ -168,7 +168,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                     raise
             res = extract_tso_solution(model, params)
             flows_vec = res.flows.loc[boundary.tolist()].to_numpy()
-            meta = {"theta": res.theta.to_dict(), "obj": res.objective if hasattr(res, "objective") else None}
+            # Build a horizon-repeated matrix for convenience (same static DC per step)
+            T = int(dso_params[0].horizon.steps) if dso_params else 1
+            flows_mat = np.tile(flows_vec[None, :], (T, 1))
+            meta = {
+                "theta": res.theta.to_dict(),
+                "obj": res.objective if hasattr(res, "objective") else None,
+                "tso_h": flows_mat.tolist(),
+            }
             return flows_vec, meta
 
         def dso_solver(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
@@ -193,13 +200,22 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 solved.append((p, res))
                 meta["dso_objs"].append(res.objective)
 
-            # Build interface vector ordered by TSO boundary slots
-            vec = np.zeros(size, dtype=float)
+            # Build interface vector ordered by TSO boundary slots, and full-horizon matrix
+            T = int(dso_params[0].horizon.steps) if dso_params else 1
+            mat = np.zeros((T, size), dtype=float)
             for slot in range(size):
                 di = int(dso_indices[slot])
                 bi = int(dso_bus_indices[slot])
                 _, res = solved[di]
-                vec[slot] = float(res.p_injections.iloc[0, bi])
+                series = res.p_injections.iloc[:, bi].to_numpy()
+                if series.shape[0] < T:
+                    # Should not happen; guard by truncating/padding
+                    tmp = np.zeros(T)
+                    tmp[: series.shape[0]] = series
+                    series = tmp
+                mat[:, slot] = series[:T]
+            vec = mat[0, :].copy()
+            meta["dso_h"] = mat.tolist()
             return vec, meta
 
         admm_cfg = ADMMConfig(
@@ -290,6 +306,9 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
             "residual_mean": result.residuals["mean"],
             "envelope_upper": result.envelope.upper.tolist(),
             "envelope_lower": result.envelope.lower.tolist(),
+            # Optional horizon-wise data if provided by solvers
+            "tso_h": getattr(result, "tso_metadata", {}).get("tso_h") if hasattr(result, "tso_metadata") else None,
+            "dso_h": getattr(result, "dso_metadata", {}).get("dso_h") if hasattr(result, "dso_metadata") else None,
         }
     )
     return {
