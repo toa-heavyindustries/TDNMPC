@@ -145,9 +145,11 @@ def run_closed_loop(
             )
 
     history = pd.DataFrame(records)
+    abs_res = history["residual"].abs() if not history.empty else pd.Series(dtype=float)
     summary = {
-        "max_abs_residual": float(history["residual"].abs().max()) if not history.empty else 0.0,
-        "mean_abs_residual": float(history["residual"].abs().mean()) if not history.empty else 0.0,
+        "max_abs_residual": float(abs_res.max()) if not abs_res.empty else 0.0,
+        "mean_abs_residual": float(abs_res.mean()) if not abs_res.empty else 0.0,
+        "sigma_p95": float(abs_res.quantile(0.95)) if not abs_res.empty else 0.0,
         "min_voltage": float(history["v_min"].min()) if not history.empty else float("nan"),
         "max_voltage": float(history["v_max"].max()) if not history.empty else float("nan"),
         "soc_min": float(history["soc"].min()) if not history.empty else float("nan"),
