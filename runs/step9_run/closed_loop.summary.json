@@ -1,0 +1,11 @@
+{
+  "max_abs_residual": 38.86681379188717,
+  "mean_abs_residual": 37.1321448452684,
+  "sigma_p95": 38.863785055671464,
+  "min_voltage": 0.8757625667599244,
+  "max_voltage": 1.03,
+  "soc_min": 0.37490885578476224,
+  "soc_max": 17.037523301527482,
+  "soc_range": 16.66261444574272,
+  "voltage_violations": 216.0
+}
