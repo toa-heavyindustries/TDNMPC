@@ -1,4 +1,8 @@
-"""Pandapower helper functions for distribution network modelling."""
+"""Pandapower helper functions for distribution network modelling.
+
+Adds convenience wrappers for AC solve and sensitivity extraction to support
+the basic experiments pipeline.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,9 @@ from pathlib import Path
 
 import pandapower as pp
 import pandas as pd
+import numpy as np
+
+from models.lindistflow import linearize_lindistflow
 
 
 IEE33_LINE_DATA = [
@@ -156,3 +163,48 @@ def load_net(path: Path) -> pp.pandapowerNet:
         raise FileNotFoundError(f"Network file not found: {path}")
     return pp.from_json(path)
 
+
+def solve_ac(net: pp.pandapowerNet) -> pd.DataFrame:
+    """Alias for :func:`ac_power_flow` for API consistency with the spec."""
+
+    return ac_power_flow(net)
+
+
+def get_sensitivity(
+    net: pp.pandapowerNet,
+    method: str = "lindistflow",
+    at_state: pd.DataFrame | None = None,
+    *,
+    epsilon: float = 1e-4,
+) -> dict[str, np.ndarray]:
+    """Return voltage sensitivity matrices S = [Rp, Rq] and base voltage.
+
+    Parameters
+    ----------
+    net:
+        Pandapower network (will be solved if ``at_state`` is not provided).
+    method:
+        "lindistflow" (default) or "local". Both currently compute numeric
+        Jacobians around the operating point using small perturbations.
+    at_state:
+        Optional DataFrame from a prior AC solve providing the base state.
+    epsilon:
+        Perturbation magnitude (MW / MVAr) used when computing the Jacobian.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Dictionary with keys ``Rp``, ``Rq``, and ``vm_base``.
+    """
+
+    if at_state is None:
+        at_state = ac_power_flow(net)
+
+    # linearize_lindistflow already performs a local numerical sensitivity around at_state
+    sens = linearize_lindistflow(net, at_state)
+    # Note: epsilon kept for future alternative implementations
+    _ = epsilon
+
+    if method not in {"lindistflow", "local"}:
+        raise ValueError("Unsupported sensitivity method: " + method)
+    return sens

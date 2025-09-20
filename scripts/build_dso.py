@@ -1,4 +1,11 @@
-"""Build a DSO network, export its data, and validate LinDistFlow sensitivities."""
+"""Build a DSO network, export its data, and validate sensitivities.
+
+Outputs:
+- data/<case>.json: serialized pandapower net
+- runs/<ts>/lin_check.json: summary pass/fail + mae/max
+- runs/<ts>/sensitivity_eval.csv: per-sample error metrics (l2, max_abs)
+- runs/<ts>/sensitivity_hist.png: histogram of max_abs error
+"""
 
 from __future__ import annotations
 
@@ -45,7 +52,63 @@ def main(argv: list[str] | None = None) -> None:
     metrics_path.write_text(json.dumps(metrics, indent=2))
     LOGGER.info("Validation metrics written to %s", metrics_path)
 
+    # Detailed sensitivity evaluation and histogram (per 基本实验.md)
+    try:
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
+
+        rng = np.random.default_rng(42)
+        pv_buses = net.load.bus.to_numpy()
+        n = len(pv_buses)
+        load_idx = net.load.index.to_numpy()
+
+        base_p = net.load["p_mw"].to_numpy().copy()
+        base_q = net.load["q_mvar"].to_numpy().copy()
+        vm_base = sens["vm_base"]
+
+        records = []
+        K = max(1, int(args.samples))
+        for k in range(K):
+            dp = rng.normal(scale=0.01, size=n)
+            dq = rng.normal(scale=0.01, size=n)
+
+            net.load.loc[load_idx, "p_mw"] = base_p + dp
+            net.load.loc[load_idx, "q_mvar"] = base_q + dq
+            pp.runpp(net, algorithm="nr", recycle=None, numba=False)
+            vm_ac = net.res_bus.vm_pu.loc[pv_buses].to_numpy()
+
+            vm_lin = vm_base + sens["Rp"] @ dp + sens["Rq"] @ dq
+            err = vm_ac - vm_lin
+            records.append({
+                "sample": k,
+                "l2": float(np.linalg.norm(err)),
+                "max_abs": float(np.max(np.abs(err))),
+            })
+
+        # Restore
+        net.load.loc[load_idx, "p_mw"] = base_p
+        net.load.loc[load_idx, "q_mvar"] = base_q
+        pp.runpp(net, algorithm="nr", recycle=None, numba=False)
+
+        df = pd.DataFrame(records)
+        df.to_csv(run_dir / "sensitivity_eval.csv", index=False)
+        LOGGER.info("Detailed sensitivity evaluation saved: %s", run_dir / "sensitivity_eval.csv")
+
+        # Histogram of max_abs
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.hist(df["max_abs"], bins=20, color="#4C78A8", alpha=0.85)
+        ax.set_title("Sensitivity Max-Abs Error")
+        ax.set_xlabel("|ΔV_ac - ΔV_lin|")
+        ax.set_ylabel("count")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(run_dir / "sensitivity_hist.png")
+        plt.close(fig)
+        LOGGER.info("Histogram saved: %s", run_dir / "sensitivity_hist.png")
+    except Exception as exc:
+        LOGGER.warning("Detailed sensitivity eval failed: %s", exc)
+
 
 if __name__ == "__main__":
     main()
-

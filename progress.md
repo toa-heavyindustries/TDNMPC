@@ -18,3 +18,4 @@
 - Step 15 (Testing Sweep) — 完成时间 2025-09-20T12:44:18Z: 汇总新增测试、运行全量 `uv run pytest -q`（GLPK 缺失自动跳过）确认覆盖齐全。
  - Plan (Basic Experiments) — 创建 @plan.md v1：汇总 M1–M4 里程碑、6 个冒烟用例与详细实施步骤；待确认后按清单推进代码完善与配置补充。
  - M1 (Profiles & Forecasts) — 增强 `src/profiles.py` 新增 `make_profiles(...)`（输出 data/loads.csv/pv.csv/temp.csv 与 results/figs 图），在 `src/sim/forecast.py` 实现 `sample_forecast(...)`（AR(1) 多场景、支持相对/加性与非负截断），并新增 `data/scenarios.yaml` 默认误差等级集合。
+ - M2 (Network & Sensitivity) — 在 `src/dso/network.py` 新增 `solve_ac` 与 `get_sensitivity(method='lindistflow'|'local')` API；扩展 `scripts/build_dso.py` 产出 `sensitivity_eval.csv` 与误差直方图 `sensitivity_hist.png`，以符合《基本实验》验收要求。
