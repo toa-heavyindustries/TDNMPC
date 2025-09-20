@@ -134,7 +134,14 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 cost_coeff=cost_coeff,
             )
             model = build_tso_model(params)
-            solve_tso_model(model, solver=tso_solver_name)
+            try:
+                solve_tso_model(model, solver=tso_solver_name)
+            except RuntimeError as exc:
+                # Fallback to GLPK if the requested solver is unavailable
+                if "available" in str(exc):
+                    solve_tso_model(model, solver="glpk")
+                else:
+                    raise
             res = extract_tso_solution(model, params)
             flows_vec = res.flows.loc[boundary.tolist()].to_numpy()
             meta = {"theta": res.theta.to_dict(), "obj": res.objective if hasattr(res, "objective") else None}
@@ -150,8 +157,13 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             meta: dict[str, Any] = {"dso_objs": []}
             for p in dso_params:
                 model = build_dso_model(p)
-                # Note: if GLPK is not available, this will raise; configure solvers via cfg["solvers"].
-                solve_dso_model(model, solver=dso_solver_name)
+                try:
+                    solve_dso_model(model, solver=dso_solver_name)
+                except RuntimeError as exc:
+                    if "available" in str(exc):
+                        solve_dso_model(model, solver="glpk")
+                    else:
+                        raise
                 res = extract_dso_solution(model, p)
                 # Aggregate pg at step 0 across buses
                 total_pg = float(res.p_injections.iloc[0, :].sum())
@@ -227,7 +239,8 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
 
 def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
     scenario: ScenarioState = state["scenario"]
-    scenario.step_ref["idx"] = t
+    if scenario.step_ref is not None:
+        scenario.step_ref["idx"] = t
     result = scenario.controller.run_step()
 
     scenario.history.append(
