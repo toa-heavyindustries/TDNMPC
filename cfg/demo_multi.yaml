@@ -3,6 +3,8 @@ time:
   steps: 8
   dt_min: 15
 
+algorithm: B2  # Distributed, no TI envelope
+
 admm:
   rho: 1.0
   max_iters: 200
@@ -59,4 +61,3 @@ run:
 mapping:
   "1": [0, 0]
   "3": [1, 1]
-

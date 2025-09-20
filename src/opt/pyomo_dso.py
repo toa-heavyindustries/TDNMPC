@@ -151,3 +151,75 @@ def extract_solution(model: pyo.ConcreteModel, params: DSOParameters) -> DSOResu
 
     return DSOResult(p_injections=pg_df, voltage=voltage_df, objective=obj)
 
+
+def apply_envelope_pg_bounds(
+    model: pyo.ConcreteModel,
+    bus_indices: list[int],
+    lower: np.ndarray,
+    upper: np.ndarray,
+    *,
+    penalty: float | None = 1000.0,
+    dt_hours: float = 1.0,
+) -> None:
+    """Apply time-varying bounds to ``pg`` at selected buses with optional soft penalty.
+
+    Parameters
+    ----------
+    model:
+        Built DSO Pyomo model (with sets ``B`` and ``T`` and variable ``pg``).
+    bus_indices:
+        List of bus indices (subset of ``model.B``) to which the bounds apply.
+    lower, upper:
+        Arrays with shape (|T|, |bus_indices|) defining bounds per time and bus.
+    penalty:
+        If provided (>=0), introduce non-negative slacks and add ``penalty * dt_hours``
+        times the L1 slack to the objective. If ``None``, enforce hard bounds.
+    dt_hours:
+        Time step in hours (scales penalty to energy-equivalent if desired).
+    """
+
+    import numpy as _np
+
+    buses = list(bus_indices)
+    T = sorted(model.T)
+    if lower.shape != (len(T), len(buses)) or upper.shape != (len(T), len(buses)):
+        raise ValueError("lower/upper must have shape (|T|, |bus_indices|)")
+
+    # Create a subset for envelope-constrained buses
+    model.B_env = pyo.Set(initialize=buses)
+
+    low_map = {(b, t): float(lower[t_idx, buses.index(b)]) for t_idx, t in enumerate(T) for b in buses}
+    up_map = {(b, t): float(upper[t_idx, buses.index(b)]) for t_idx, t in enumerate(T) for b in buses}
+
+    model.p_env_lower = pyo.Param(model.B_env, model.T, initialize=low_map, mutable=False)
+    model.p_env_upper = pyo.Param(model.B_env, model.T, initialize=up_map, mutable=False)
+
+    if penalty is None:
+        # Hard bounds
+        def _ub_rule(m, b, t):
+            return m.pg[b, t] <= m.p_env_upper[b, t]
+
+        def _lb_rule(m, b, t):
+            return m.pg[b, t] >= m.p_env_lower[b, t]
+
+        model.p_env_ub = pyo.Constraint(model.B_env, model.T, rule=_ub_rule)
+        model.p_env_lb = pyo.Constraint(model.B_env, model.T, rule=_lb_rule)
+        return
+
+    # Soft bounds with L1 slack
+    model.p_env_pos = pyo.Var(model.B_env, model.T, domain=pyo.NonNegativeReals)
+    model.p_env_neg = pyo.Var(model.B_env, model.T, domain=pyo.NonNegativeReals)
+
+    def _ub_rule(m, b, t):
+        return m.pg[b, t] <= m.p_env_upper[b, t] + m.p_env_pos[b, t]
+
+    def _lb_rule(m, b, t):
+        return m.pg[b, t] >= m.p_env_lower[b, t] - m.p_env_neg[b, t]
+
+    model.p_env_ub = pyo.Constraint(model.B_env, model.T, rule=_ub_rule)
+    model.p_env_lb = pyo.Constraint(model.B_env, model.T, rule=_lb_rule)
+
+    coeff = float(penalty) * float(dt_hours)
+    penalty_expr = coeff * sum(model.p_env_pos[b, t] + model.p_env_neg[b, t] for b in model.B_env for t in model.T)
+    # Augment objective
+    model.objective.expr = model.objective.expr + penalty_expr

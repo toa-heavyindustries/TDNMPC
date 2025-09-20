@@ -82,3 +82,45 @@ def violation_stats(env: Envelope, values: np.ndarray) -> dict[str, float]:
         "rate": rate,
     }
 
+
+def compute_bounds_from_scenarios(
+    scenarios: np.ndarray,
+    *,
+    alpha: float = 1.0,
+    margin: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute time-varying lower/upper bounds from multi-scenario trajectories.
+
+    Parameters
+    ----------
+    scenarios:
+        Array with shape (n_scenarios, horizon, n_signals).
+    alpha:
+        Tightening factor in (0, 1]. 1.0 keeps the convex hull [min, max]; lower values
+        shrink bounds towards the midpoint.
+    margin:
+        Non-negative padding added to upper and subtracted from lower.
+
+    Returns
+    -------
+    (lower, upper):
+        Bounds with shape (horizon, n_signals).
+    """
+
+    arr = np.asarray(scenarios, dtype=float)
+    if arr.ndim != 3:
+        raise ValueError("scenarios must be 3D: (n_scen, horizon, n_signals)")
+    if not (0.0 < alpha <= 1.0):
+        raise ValueError("alpha must be in (0, 1]")
+    if margin < 0:
+        raise ValueError("margin must be non-negative")
+
+    s_min = np.min(arr, axis=0)
+    s_max = np.max(arr, axis=0)
+    center = 0.5 * (s_min + s_max)
+    halfspan = 0.5 * (s_max - s_min)
+    halfspan *= alpha
+
+    lower = center - halfspan - margin
+    upper = center + halfspan + margin
+    return lower, upper

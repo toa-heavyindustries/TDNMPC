@@ -3,6 +3,8 @@ time:
   steps: 6
   dt_min: 15
 
+algorithm: OUR
+
 admm:
   rho: 1.0
   max_iters: 100

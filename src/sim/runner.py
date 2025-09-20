@@ -23,6 +23,7 @@ import pandas as pd
 
 from coord.admm import ADMMConfig
 from nmpc.controller import NMPCConfig, NMPCController
+from nmpc.greedy import GreedyConfig, GreedyController
 from utils import ensure_run_dir
 from utils.config import load_config
 from utils.timewin import make_horizon, align_profiles
@@ -38,7 +39,10 @@ from opt.pyomo_dso import (
     build_dso_model,
     extract_solution as extract_dso_solution,
     solve_dso_model,
+    apply_envelope_pg_bounds,
 )
+from sim.forecast import sample_forecast
+from coord.ti_env import compute_bounds_from_scenarios
 
 
 @dataclass
@@ -56,6 +60,10 @@ class ScenarioState:
     # Coupling mapping: length=size arrays mapping each TSO boundary slot to (dso_idx, dso_bus_idx)
     dso_indices: np.ndarray | None = None
     dso_bus_indices: np.ndarray | None = None
+    # Algorithm selection
+    algorithm: str = "OUR"
+    # Precomputed TI envelope specs per DSO index
+    dso_env_specs: dict[int, dict[str, Any]] | None = None
 
 
 def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
@@ -70,6 +78,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
 
     admm_dict = cfg.get("admm", {})
     env_cfg = cfg.get("envelope", {})
+    alg = str(cfg.get("algorithm", "OUR")).upper()
 
     if "tso" in cfg and "dsos" in cfg:
         # Integrated physics mode: prepare TSO base parameters and DSO parameter list.
@@ -148,6 +157,46 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
         tso_solver_name = str(solvers.get("tso", "ipopt"))
         dso_solver_name = str(solvers.get("dso", "ipopt"))
 
+        # Precompute TI envelope bounds if enabled or required (OUR/B3)
+        dso_env_specs: dict[int, dict[str, Any]] = {}
+        ti_cfg = cfg.get("ti_envelope", {}) | env_cfg
+        ti_enabled = bool(ti_cfg.get("enabled", alg in {"OUR", "B3"}))
+        scen_count = int(ti_cfg.get("scenario_count", 8))
+        alpha = float(ti_cfg.get("alpha", 1.0))
+        margin = float(ti_cfg.get("margin", 0.0))
+        fcfg = cfg.get("forecast", {})
+        sigL = float(fcfg.get("sigma_load", 0.05))
+        sigPV = float(fcfg.get("sigma_pv", 0.15))
+        rho_err = float(fcfg.get("rho", 0.6))
+
+        # Build mapping slots per DSO index
+        slot_groups: dict[int, dict[str, Any]] = {}
+        size = len(boundary)
+        for slot in range(size):
+            di = int(dso_indices[slot]) if 'dso_indices' in locals() or 'dso_indices' in globals() else slot
+            bi = int(dso_bus_indices[slot]) if 'dso_bus_indices' in locals() or 'dso_bus_indices' in globals() else 0
+            g = slot_groups.setdefault(di, {"slots": [], "bus_indices": []})
+            g["slots"].append(slot)
+            g["bus_indices"].append(bi)
+
+        if ti_enabled:
+            for di, group in slot_groups.items():
+                p = dso_params[di]
+                T = int(p.horizon.steps)
+                load_series = p.profiles["load"].iloc[:T]
+                pv_series = p.profiles["pv"].iloc[:T]
+                # Sample per-scenario series (assumed same across buses)
+                L = sample_forecast(load_series, sigma=sigL, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=False)
+                PV = sample_forecast(pv_series, sigma=sigPV, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=True)
+                # Net generation need (kW) assumed ~ max(load - pv, 0)
+                G = np.maximum(L - PV, 0.0)
+                # Build bounds per slot (bus)
+                m = len(group["bus_indices"])
+                # Scenarios are identical across buses; tile across bus dimension
+                G3 = np.repeat(G[:, :, None], m, axis=2)
+                low, up = compute_bounds_from_scenarios(G3, alpha=alpha, margin=margin)
+                dso_env_specs[di] = {"bus_indices": group["bus_indices"], "lower": low, "upper": up}
+
         def tso_solver(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
             """Solve the DC TSO Pyomo model using ADMM iterate ``v`` as boundary targets."""
             params = TSOParameters(
@@ -187,8 +236,17 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             # Solve each distinct DSO once, then assemble per-interface vector by mapping bus indices
             meta: dict[str, Any] = {"dso_objs": []}
             solved: list[tuple[DSOParameters, Any]] = []
-            for p in dso_params:
+            for di, p in enumerate(dso_params):
                 model = build_dso_model(p)
+                # Apply TI envelope bounds if configured for this DSO
+                if ti_enabled and alg in {"OUR", "B3"} and di in dso_env_specs:
+                    spec = dso_env_specs[di]
+                    buses = list(spec["bus_indices"])  # bus indices within DSO model
+                    low = np.asarray(spec["lower"], dtype=float)
+                    up = np.asarray(spec["upper"], dtype=float)
+                    pen = float(ti_cfg.get("penalty", 1000.0)) if alg == "OUR" else None
+                    dt_hours = p.horizon.dt_min / 60.0
+                    apply_envelope_pg_bounds(model, buses, low, up, penalty=pen, dt_hours=dt_hours)
                 try:
                     solve_dso_model(model, solver=dso_solver_name)
                 except RuntimeError as exc:
@@ -226,22 +284,35 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             tol_dual=float(admm_dict.get("tol_dual", 1e-4)),
         )
 
-        nmpc_cfg = NMPCConfig(
-            size=size,
-            admm=admm_cfg,
-            tso_solver=tso_solver,
-            dso_solver=dso_solver,
-            envelope_margin=float(env_cfg.get("margin", 0.05)),
-            envelope_alpha=float(env_cfg.get("alpha", 0.3)),
-        )
-        controller = NMPCController(nmpc_cfg)
+        # Algorithm-specific controller
+        if alg == "B0":
+            gcfg = GreedyConfig(
+                size=size,
+                dso_solver=dso_solver,
+                envelope_margin=float(env_cfg.get("margin", 0.05)),
+                envelope_alpha=float(env_cfg.get("alpha", 0.3)),
+            )
+            controller = GreedyController(gcfg)  # type: ignore[assignment]
+        else:
+            nmpc_cfg = NMPCConfig(
+                size=size,
+                admm=admm_cfg,
+                tso_solver=tso_solver,
+                dso_solver=dso_solver,
+                envelope_margin=float(env_cfg.get("margin", 0.05)),
+                envelope_alpha=float(env_cfg.get("alpha", 0.3)),
+            )
+            controller = NMPCController(nmpc_cfg)
+
         return ScenarioState(
-            controller=controller,
+            controller=controller,  # type: ignore[arg-type]
             history=[],
             tso_base={"Y": Y, "inj": injections, "boundary": boundary, "cost": cost_coeff},
             dso_params=dso_params,
             dso_indices=dso_indices,
             dso_bus_indices=dso_bus_indices,
+            algorithm=alg,
+            dso_env_specs=dso_env_specs if ti_enabled else None,
         )
 
     # Fallback: toy consensus mode used by tests
@@ -295,7 +366,53 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
     scenario: ScenarioState = state["scenario"]
     if scenario.step_ref is not None:
         scenario.step_ref["idx"] = t
-    result = scenario.controller.run_step()
+    # Centralized (B1): one-shot DSO then TSO
+    if getattr(scenario, "algorithm", "OUR") == "B1":
+        # Compute local DSO response ignoring TSO signal first
+        def _get_dso_vec() -> tuple[np.ndarray, Any]:
+            # Reuse the controller's dso_solver via a small proxy ADMM call
+            ctrl = scenario.controller
+            # Access underlying solver by using a zero vector through the public API
+            # Fall back: if controller lacks attribute, call run_step
+            try:
+                dso_solver = ctrl.config.dso_solver  # type: ignore[attr-defined]
+                dso_vec, dso_meta = dso_solver(np.zeros(ctrl.config.size))  # type: ignore[attr-defined]
+            except Exception:
+                step = ctrl.run_step()
+                dso_vec, dso_meta = step.dso_vector, step.dso_metadata
+            return dso_vec, dso_meta
+
+        dso_vec, dso_meta = _get_dso_vec()
+        # Feed to TSO as boundary targets
+        def _get_tso_vec() -> tuple[np.ndarray, Any]:
+            try:
+                tso_solver = scenario.controller.config.tso_solver  # type: ignore[attr-defined]
+                tso_vec, tso_meta = tso_solver(dso_vec)
+            except Exception:
+                tso_vec, tso_meta = dso_vec.copy(), {}
+            return tso_vec, tso_meta
+
+        tso_vec, tso_meta = _get_tso_vec()
+
+        # Craft result in NMPCStepResult-like shape
+        from nmpc.controller import NMPCStepResult
+        from coord.ti_env import update_envelope, create_envelope
+
+        if not hasattr(scenario.controller, "envelope"):
+            scenario.controller.envelope = create_envelope(size=dso_vec.shape[0])  # type: ignore[attr-defined]
+        scenario.controller.envelope = update_envelope(scenario.controller.envelope, dso_vec)  # type: ignore[attr-defined]
+        env = scenario.controller.envelope  # type: ignore[attr-defined]
+        result = NMPCStepResult(
+            tso_vector=tso_vec,
+            dso_vector=dso_vec,
+            residuals={"max": float(np.max(np.abs(tso_vec - dso_vec))), "mean": float(np.mean(np.abs(tso_vec - dso_vec))), "l2": float(np.linalg.norm(tso_vec - dso_vec))},
+            admm_history=[],
+            envelope=env,
+            tso_metadata=tso_meta,
+            dso_metadata=dso_meta,
+        )
+    else:
+        result = scenario.controller.run_step()
 
     scenario.history.append(
         {
