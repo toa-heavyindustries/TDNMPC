@@ -240,7 +240,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
             horizon step as the boundary response for each DSO.
             """
             # Solve each distinct DSO once, then assemble per-interface vector by mapping bus indices
-            meta: dict[str, Any] = {"dso_objs": []}
+            meta: dict[str, Any] = {"dso_objs": [], "dso_voltages": []}
             solved: list[tuple[DSOParameters, Any]] = []
             for di, p in enumerate(dso_params):
                 model = build_dso_model(p)
@@ -265,10 +265,12 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                     class _Res:
                         def __init__(self, pg: _pd.DataFrame):
                             self.p_injections = pg
+                            self.voltage = pg  # Use same shape for voltage fallback
                             self.objective = 0.0
                     res = _Res(zero)
                 solved.append((p, res))
                 meta["dso_objs"].append(res.objective)
+                meta["dso_voltages"].append(res.voltage.to_dict(orient="split"))
 
             # Build interface vector ordered by TSO boundary slots, and full-horizon matrix
             T = int(dso_params[0].horizon.steps) if dso_params else 1
@@ -438,6 +440,7 @@ def simulate_step(state: dict[str, Any], t: int) -> dict[str, Any]:
             # Optional horizon-wise data if provided by solvers
             "tso_h": getattr(result, "tso_metadata", {}).get("tso_h") if hasattr(result, "tso_metadata") else None,
             "dso_h": getattr(result, "dso_metadata", {}).get("dso_h") if hasattr(result, "dso_metadata") else None,
+            "dso_voltages": getattr(result, "dso_metadata", {}).get("dso_voltages") if hasattr(result, "dso_metadata") else None,
         }
     )
     return {

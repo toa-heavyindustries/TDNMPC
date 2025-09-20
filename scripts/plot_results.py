@@ -15,6 +15,45 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("run_dir", type=Path, help="Run directory containing logs.csv/summary.json")
     return parser.parse_args(argv)
 
+def plot_voltage_heatmap(logs: pd.DataFrame, run_dir: Path) -> None:
+    """Plot a heatmap of DSO node voltages over time."""
+    if "dso_voltages" not in logs.columns or logs["dso_voltages"].isnull().all():
+        return
+
+    try:
+        # Extract the voltage data for the first control step of each simulation step for the first DSO.
+        voltage_series = []
+        # The column is read as a string, so we need to evaluate it back to a Python object.
+        voltages_col = logs["dso_voltages"].apply(literal_eval)
+
+        for step_voltages in voltages_col:
+            if not isinstance(step_voltages, list) or not step_voltages:
+                continue
+            # Reconstruct DataFrame from split format for the first DSO
+            dso0_horizon_dict = step_voltages[0]
+            dso0_horizon_df = pd.DataFrame(**dso0_horizon_dict)
+            # Get the voltage at the first time step of the horizon
+            voltage_series.append(dso0_horizon_df.iloc[0])
+
+        if not voltage_series:
+            return
+
+        heatmap_df = pd.concat(voltage_series, axis=1)
+        heatmap_df.columns = logs.index[:len(heatmap_df.columns)]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        im = ax.imshow(heatmap_df, aspect="auto", cmap="viridis", vmin=0.95, vmax=1.05)
+        fig.colorbar(im, ax=ax, label="Voltage (p.u.)")
+
+        ax.set_xlabel("Simulation Step")
+        ax.set_ylabel("DSO 0 Bus Index")
+        ax.set_title("DSO 0 Nodal Voltage Heatmap")
+
+        fig.tight_layout()
+        fig.savefig(run_dir / "voltage_heatmap_dso0.png")
+        plt.close(fig)
+    except Exception as e:
+        print(f"Failed to generate voltage heatmap: {e}")
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
@@ -66,6 +105,7 @@ def main(argv: list[str] | None = None) -> None:
         except Exception:
             pass
 
+    plot_voltage_heatmap(logs, run_dir)
 
 if __name__ == "__main__":
     main()
