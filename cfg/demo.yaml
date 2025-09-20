@@ -1,0 +1,46 @@
+time:
+  start: "2024-01-01 00:00"
+  steps: 6
+  dt_min: 15
+
+admm:
+  rho: 1.0
+  max_iters: 100
+  tol_primal: 1.0e-6
+  tol_dual: 1.0e-6
+
+solvers:
+  tso: ipopt
+  dso: ipopt
+
+tso:
+  # Simple 3-bus Laplacian admittance (chain) used in tests
+  admittance:
+    - [ 1.0, -1.0,  0.0]
+    - [-1.0,  2.0, -1.0]
+    - [ 0.0, -1.0,  1.0]
+  injections: [-40.0, 10.0, 30.0]
+  boundary: [2]
+  cost_coeff: 10.0
+
+dsos:
+  - sens:
+      Rp: [[0.01, 0.0], [0.0, 0.01]]
+      Rq: [[0.0, 0.0], [0.0, 0.0]]
+      vm_base: [1.0, 1.0]
+    profiles:
+      # length >= time.steps
+      load: [900, 950, 980, 960, 940, 930]
+      pv:   [100, 120, 140, 160, 150, 140]
+    vmin: 0.95
+    vmax: 1.05
+    penalty_voltage: 1000.0
+    cost_coeff: 50.0
+
+envelope:
+  margin: 0.05
+  alpha: 0.3
+
+run:
+  base: runs
+  tag: demo
