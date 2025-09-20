@@ -1,0 +1,67 @@
+time:
+  start: "2024-01-01 00:00"
+  steps: 48
+  dt_min: 15
+
+N_pred: 16
+algorithm: B2  # Distributed, no TI envelope
+
+admm:
+  rho: 1.0
+  max_iters: 100
+  tol_primal: 1.0e-6
+  tol_dual: 1.0e-6
+
+solvers:
+  tso: ipopt
+  dso: ipopt
+
+tso:
+  admittance:
+    - [ 1.0, -1.0,  0.0,  0.0]
+    - [-1.0,  2.0, -1.0,  0.0]
+    - [ 0.0, -1.0,  2.0, -1.0]
+    - [ 0.0,  0.0, -1.0,  1.0]
+  injections: [-30.0, 5.0, 15.0, 10.0]
+  boundary: [1, 3]
+  cost_coeff: 10.0
+
+dsos:
+  - sens:
+      Rp: [[0.01, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01]]
+      Rq: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+      vm_base: [1.0, 1.0, 1.0]
+    profiles:
+      csv: data/profiles.csv
+    vmin: 0.95
+    vmax: 1.05
+    penalty_voltage: 1000.0
+    cost_coeff: 50.0
+
+  - sens:
+    Rp: [[0.01, 0.0], [0.0, 0.01]]
+    Rq: [[0.0, 0.0], [0.0, 0.0]]
+    vm_base: [1.0, 1.0]
+    profiles:
+      csv: data/profiles.csv
+    vmin: 0.95
+    vmax: 1.05
+    penalty_voltage: 1000.0
+    cost_coeff: 50.0
+
+forecast:
+  sigma_load: 0.05
+  sigma_pv: 0.15
+  rho: 0.6
+
+ti_envelope:
+  enabled: false
+
+run:
+  base: runs
+  tag: b2_33
+
+mapping:
+  "1": [0, 0]
+  "3": [1, 1]
+

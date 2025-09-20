@@ -1,0 +1,54 @@
+time:
+  start: "2024-01-01 00:00"
+  steps: 12
+  dt_min: 15
+
+N_pred: 12
+algorithm: B1  # Centralized, deterministic
+
+admm:
+  rho: 1.0
+  max_iters: 50
+  tol_primal: 1.0e-6
+  tol_dual: 1.0e-6
+
+solvers:
+  tso: ipopt
+  dso: ipopt
+
+tso:
+  admittance:
+    - [ 1.0, -1.0,  0.0]
+    - [-1.0,  2.0, -1.0]
+    - [ 0.0, -1.0,  1.0]
+  injections: [-40.0, 10.0, 30.0]
+  boundary: [2]
+  cost_coeff: 10.0
+
+dsos:
+  - sens:
+      Rp: [[0.01, 0.0], [0.0, 0.01]]
+      Rq: [[0.0, 0.0], [0.0, 0.0]]
+      vm_base: [1.0, 1.0]
+    profiles:
+      csv: data/profiles.csv
+    vmin: 0.95
+    vmax: 1.05
+    penalty_voltage: 1000.0
+    cost_coeff: 50.0
+
+forecast:
+  sigma_load: 0.0
+  sigma_pv: 0.0
+  rho: 0.0
+
+ti_envelope:
+  enabled: false
+
+run:
+  base: runs
+  tag: sanity_b1
+
+mapping:
+  "2": [0, 0]
+

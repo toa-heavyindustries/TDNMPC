@@ -74,7 +74,9 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
     used by tests.
     """
     time_cfg = cfg["time"]
-    _ = make_horizon(time_cfg["start"], time_cfg["steps"], time_cfg["dt_min"])  # reserved
+    # Allow shorter prediction horizon than total simulation steps
+    n_pred = int(cfg.get("N_pred", time_cfg["steps"]))
+    _ = make_horizon(time_cfg["start"], n_pred, time_cfg["dt_min"])  # reserved
 
     admm_dict = cfg.get("admm", {})
     env_cfg = cfg.get("envelope", {})
@@ -98,7 +100,7 @@ def _build_controller(cfg: dict[str, Any]) -> ScenarioState:
                 "Rq": np.asarray(d["sens"].get("Rq", np.zeros_like(d["sens"]["Rp"])), dtype=float),
                 "vm_base": np.asarray(d["sens"]["vm_base"], dtype=float),
             }
-            horizon_steps = int(time_cfg["steps"])  # use global horizon for now
+            horizon_steps = int(n_pred)
             # Profiles: accept inline arrays or a CSV path
             prof = d.get("profiles", {})
             if "csv" in prof:
@@ -453,8 +455,64 @@ def _simulate(cfg: dict[str, Any]) -> dict[str, Any]:
     import pandas as pd
     df = pd.DataFrame(history)
     df.to_csv(run_dir / "logs.csv", index=False)
-    summary = {"final_residual": history[-1]["residual_max"], "steps": steps}
+
+    # Expand vectors to wide trace for convenience
+    if not df.empty:
+        try:
+            import numpy as _np
+            tso_mat = _np.vstack(df["tso_vector"].apply(_np.asarray).to_list())
+            dso_mat = _np.vstack(df["dso_vector"].apply(_np.asarray).to_list())
+            env_up = _np.vstack(df["envelope_upper"].apply(_np.asarray).to_list())
+            env_lo = _np.vstack(df["envelope_lower"].apply(_np.asarray).to_list())
+            cols_tso = {i: f"tso_{i}" for i in range(tso_mat.shape[1])}
+            cols_dso = {i: f"dso_{i}" for i in range(dso_mat.shape[1])}
+            cols_up = {i: f"env_up_{i}" for i in range(env_up.shape[1])}
+            cols_lo = {i: f"env_lo_{i}" for i in range(env_lo.shape[1])}
+            wide = pd.DataFrame(index=df.index)
+            for i, name in cols_tso.items():
+                wide[name] = tso_mat[:, i]
+            for i, name in cols_dso.items():
+                wide[name] = dso_mat[:, i]
+            for i, name in cols_up.items():
+                wide[name] = env_up[:, i]
+            for i, name in cols_lo.items():
+                wide[name] = env_lo[:, i]
+            wide["residual_max"] = df["residual_max"].values
+            wide["residual_mean"] = df["residual_mean"].values
+            wide["step"] = df["step"].values
+            wide.to_parquet(run_dir / "trace.parquet", index=False)
+        except Exception:
+            pass
+
+    summary = {
+        "final_residual": float(history[-1]["residual_max"]),
+        "mean_residual": float(df["residual_mean"].mean()) if not df.empty else None,
+        "steps": steps,
+        "interfaces": int(len(history[-1]["tso_vector"])) if history else 0,
+    }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+
+    # Figures
+    figs = run_dir / "figs"
+    figs.mkdir(parents=True, exist_ok=True)
+    try:
+        # Plot interface 0 tso vs dso if present
+        if not df.empty and len(df["tso_vector"].iloc[0]) > 0:
+            s0_tso = [row[0] for row in df["tso_vector"]]
+            s0_dso = [row[0] for row in df["dso_vector"]]
+            plot_df = pd.DataFrame({"tso_0": s0_tso, "dso_0": s0_dso})
+            from viz.plots import plot_timeseries
+
+            plot_timeseries(plot_df, ["tso_0", "dso_0"], figs / "pcc_timeseries.png")
+    except Exception:
+        pass
+
+    # Summary markdown
+    try:
+        md = ["# Run Summary", "", f"- Steps: {summary['steps']}", f"- Interfaces: {summary['interfaces']}", f"- Final residual: {summary['final_residual']:.3e}", f"- Mean residual: {summary['mean_residual']:.3e}" if summary["mean_residual"] is not None else "- Mean residual: n/a"]
+        (run_dir / "summary.md").write_text("\n".join(md))
+    except Exception:
+        pass
 
     # Save ADMM per-iteration histories and plots per step
     import pandas as pd

@@ -20,3 +20,4 @@
  - M1 (Profiles & Forecasts) — 增强 `src/profiles.py` 新增 `make_profiles(...)`（输出 data/loads.csv/pv.csv/temp.csv 与 results/figs 图），在 `src/sim/forecast.py` 实现 `sample_forecast(...)`（AR(1) 多场景、支持相对/加性与非负截断），并新增 `data/scenarios.yaml` 默认误差等级集合。
  - M2 (Network & Sensitivity) — 在 `src/dso/network.py` 新增 `solve_ac` 与 `get_sensitivity(method='lindistflow'|'local')` API；扩展 `scripts/build_dso.py` 产出 `sensitivity_eval.csv` 与误差直方图 `sensitivity_hist.png`，以符合《基本实验》验收要求。
  - M3 (Control & Coordination) — 实现算法开关（B0/B1/B2/B3/OUR），新增 `src/nmpc/greedy.py`（B0），在 `src/coord/ti_env.py` 增加 `compute_bounds_from_scenarios`，在 `src/opt/pyomo_dso.py` 新增 `apply_envelope_pg_bounds`（软/硬包络约束并接入目标函数），`src/sim/runner.py` 集成多场景预测→包络生成→模型施加，支持 OUR（软包络）与 B3（硬包络），并为 demo 配置添加 `algorithm` 字段。
+ - M4 (Runner Outputs) — `src/sim/runner.py` 增加 `trace.parquet`、`figs/pcc_timeseries.png` 与 `summary.md` 产出；支持 `N_pred` 以使用短预测窗；保留 `logs.csv` 与 `summary.json`。
