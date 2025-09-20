@@ -7,3 +7,4 @@ pandapower>=2.14
 pyyaml>=6.0.2
 tqdm>=4.67.1
 pytest>=8.4.2
+pypower>=5.1.19

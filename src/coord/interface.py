@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 
+if TYPE_CHECKING:  # pragma: no cover
+    from tso.network import TsoPandapowerCase
+
+
 def define_coupling(
-    tso_case: dict[str, Any],
+    tso_case: dict[str, Any] | "TsoPandapowerCase",
     dso_nets: list[Any],
     mapping: dict[int, tuple[int, int]],
 ) -> dict[str, np.ndarray]:
@@ -31,7 +35,7 @@ def define_coupling(
         Coupling metadata containing aligned arrays for boundary buses and their DSO targets.
     """
 
-    boundary = np.asarray(tso_case.get("boundary", []), dtype=int)
+    boundary = _extract_boundary_array(tso_case)
     if boundary.size == 0:
         raise ValueError("TSO case does not define any boundary buses")
 
@@ -75,6 +79,18 @@ def define_coupling(
         net["coupling"] = coupling_info  # type: ignore[index]
 
     return coupler
+
+
+def _extract_boundary_array(tso_case: dict[str, Any] | "TsoPandapowerCase") -> np.ndarray:
+    """Return a boundary bus array for legacy dicts or new dataclass inputs."""
+
+    if isinstance(tso_case, dict):
+        return np.asarray(tso_case.get("boundary", []), dtype=int)
+
+    boundary = getattr(tso_case, "boundary_buses", None)
+    if boundary is None:
+        raise ValueError("TSO case lacks boundary metadata")
+    return np.asarray(boundary, dtype=int)
 
 
 def push_tso_signals_to_dsos(signals: np.ndarray, dso_nets: list[Any]) -> None:
@@ -132,4 +148,3 @@ def coupling_residuals(tso_p: np.ndarray, dso_p: np.ndarray) -> dict[str, float]
         "mean": float(np.mean(np.abs(diff))) if diff.size else 0.0,
         "l2": float(np.linalg.norm(diff)) if diff.size else 0.0,
     }
-

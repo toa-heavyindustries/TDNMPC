@@ -12,6 +12,7 @@ from coord.interface import (
     push_tso_signals_to_dsos,
 )
 from dso.network import build_ieee33
+from sim import plan_baseline_coupled_system
 from tso.network import build_tso_case, mark_boundary_buses
 
 
@@ -56,3 +57,18 @@ def test_coupling_residuals_metrics() -> None:
     assert metrics["mean"] == pytest.approx(1.25)
     assert metrics["l2"] == pytest.approx(np.linalg.norm(tso - dso))
 
+
+def test_define_coupling_supports_baseline_plan() -> None:
+    plan = plan_baseline_coupled_system(boundary_buses=[16, 18])
+    attachments = plan.attachments
+    dso_nets = [attachment.feeder.net for attachment in attachments]
+    mapping = {
+        attachment.boundary_bus: (idx, attachment.feeder.root_bus)
+        for idx, attachment in enumerate(attachments)
+    }
+
+    coupler = define_coupling(plan.tso, dso_nets, mapping)
+    assert coupler["n_interfaces"] == len(attachments)
+    assert set(coupler["tso_buses"].tolist()) == {
+        attachment.boundary_bus for attachment in attachments
+    }

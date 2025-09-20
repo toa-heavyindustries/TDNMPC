@@ -1,10 +1,13 @@
-"""Utilities for constructing and solving simplified DC transmission networks."""
+"""Utilities for constructing and solving transmission network test cases."""
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Iterable, Sequence
 
 import numpy as np
+import pandapower as pp
+import pandapower.networks as pn
 
 
 def build_tso_case(n_bus: int = 30) -> dict[str, Any]:
@@ -93,3 +96,107 @@ def _solve_dc(case: dict[str, Any], injections: np.ndarray | None) -> np.ndarray
 
     return theta
 
+
+@dataclass(slots=True)
+class TsoPandapowerCase:
+    """Container bundling a pandapower transmission case with metadata."""
+
+    net: pp.pandapowerNet
+    boundary_buses: list[int]
+    case_name: str
+
+    @property
+    def boundary_bus_names(self) -> list[str]:
+        """Return the bus ``name`` entries matching :attr:`boundary_buses`."""
+
+        bus = self.net.bus
+        return [str(bus.at[idx, "name"]) for idx in self.boundary_buses]
+
+
+_PANDAPOWER_CASES: dict[str, callable[[], pp.pandapowerNet]] = {
+    "case39": pn.case39,
+    "case118": pn.case118,
+}
+
+_DEFAULT_BOUNDARY_LABELS: dict[str, list[int]] = {
+    "case39": [16, 18, 21],
+}
+
+
+def build_tso_pandapower(
+    case_name: str = "case39",
+    boundary_buses: Sequence[int | str] | None = None,
+) -> TsoPandapowerCase:
+    """Return a pandapower MATPOWER test case with boundary metadata.
+
+    Parameters
+    ----------
+    case_name:
+        Name of the pandapower case constructor (``case39`` or ``case118``).
+    boundary_buses:
+        Optional iterable of bus identifiers (indices or names). If ``None``,
+        defaults are selected based on the case, falling back to the first load
+        buses when unspecified in :data:`_DEFAULT_BOUNDARY_LABELS`.
+    """
+
+    case_key = case_name.lower()
+    try:
+        factory = _PANDAPOWER_CASES[case_key]
+    except KeyError as exc:  # pragma: no cover - defensive path
+        raise ValueError(f"Unsupported TSO case: {case_name}") from exc
+
+    net = factory()
+    boundaries = _resolve_boundary_buses(net, case_key, boundary_buses)
+
+    net.bus["is_boundary"] = False
+    if boundaries:
+        net.bus.loc[boundaries, "is_boundary"] = True
+
+    return TsoPandapowerCase(net=net, boundary_buses=boundaries, case_name=case_key)
+
+
+def _resolve_boundary_buses(
+    net: pp.pandapowerNet,
+    case_key: str,
+    boundary_buses: Sequence[int | str] | None,
+) -> list[int]:
+    """Resolve user-specified or default boundary buses for ``net``."""
+
+    candidates: Iterable[int | str]
+    if boundary_buses is None:
+        candidates = _DEFAULT_BOUNDARY_LABELS.get(case_key, [])
+        if not candidates:
+            candidates = _infer_boundary_defaults(net)
+    else:
+        candidates = boundary_buses
+
+    resolved: list[int] = []
+    for label in candidates:
+        bus_idx = _map_bus_label(net, label)
+        if bus_idx not in resolved:
+            resolved.append(bus_idx)
+    return resolved
+
+
+def _infer_boundary_defaults(net: pp.pandapowerNet) -> list[int]:
+    """Select up to three PQ buses as fallback boundaries."""
+
+    load_buses = list(dict.fromkeys(net.load.bus.tolist()))
+    if not load_buses:
+        return net.bus.index.tolist()[: min(3, len(net.bus))]
+    return load_buses[: min(3, len(load_buses))]
+
+
+def _map_bus_label(net: pp.pandapowerNet, label: int | str) -> int:
+    """Translate a bus ``label`` (index or name) to the internal index."""
+
+    bus_df = net.bus
+    target_name = str(label).strip()
+    name_matches = bus_df.index[bus_df["name"].astype(str) == target_name]
+    if len(name_matches):
+        return int(name_matches[0])
+
+    if isinstance(label, (int, np.integer)) and int(label) in bus_df.index:
+        return int(label)
+
+    raise ValueError(f"Bus label '{label}' not found in network")

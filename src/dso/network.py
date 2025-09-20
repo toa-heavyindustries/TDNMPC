@@ -6,9 +6,12 @@ the basic experiments pipeline.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import pandapower as pp
+import pandapower.networks as pn
 import pandas as pd
 import numpy as np
 
@@ -208,3 +211,69 @@ def get_sensitivity(
     if method not in {"lindistflow", "local"}:
         raise ValueError("Unsupported sensitivity method: " + method)
     return sens
+
+
+@dataclass(slots=True)
+class DsoFeeder:
+    """Distribution feeder specification built from pandapower templates."""
+
+    net: pp.pandapowerNet
+    feeder_type: Literal["mv", "lv"]
+    target_peak_mw: float
+    cos_phi: float
+    root_bus: int
+
+
+def build_cigre_feeder(
+    feeder_type: Literal["mv", "lv"] = "mv",
+    *,
+    target_peak_mw: float = 30.0,
+    cos_phi: float = 0.95,
+    with_der: bool = False,
+) -> DsoFeeder:
+    """Construct a CIGRE MV/LV feeder scaled to the desired peak loading."""
+
+    feeder_key = feeder_type.lower()
+    if feeder_key not in {"mv", "lv"}:
+        raise ValueError("feeder_type must be 'mv' or 'lv'")
+
+    if feeder_key == "mv":
+        net = pn.create_cigre_network_mv(with_der=with_der)
+    else:
+        if with_der:
+            raise ValueError("with_der is not supported for CIGRE LV templates")
+        net = pn.create_cigre_network_lv()
+
+    _scale_feeder_loads(net, target_peak_mw, cos_phi)
+
+    root_bus = int(net.ext_grid.bus.iloc[0]) if not net.ext_grid.empty else 0
+
+    net.bus["is_boundary"] = False
+    if root_bus in net.bus.index:
+        net.bus.at[root_bus, "is_boundary"] = True
+
+    feeder_literal: Literal["mv", "lv"] = "mv" if feeder_key == "mv" else "lv"
+
+    return DsoFeeder(
+        net=net,
+        feeder_type=feeder_literal,
+        target_peak_mw=target_peak_mw,
+        cos_phi=cos_phi,
+        root_bus=root_bus,
+    )
+
+
+def _scale_feeder_loads(net: pp.pandapowerNet, target_peak_mw: float, cos_phi: float) -> None:
+    """Uniformly scale loads to match ``target_peak_mw`` at the specified cosφ."""
+
+    total_p = float(net.load.p_mw.sum())
+    if not total_p:
+        return
+
+    scale = target_peak_mw / total_p
+    net.load.loc[:, "p_mw"] *= scale
+
+    cos_phi = float(cos_phi)
+    cos_phi = np.clip(cos_phi, 0.1, 0.999)
+    tan_phi = np.sqrt(1.0 / (cos_phi**2) - 1.0)
+    net.load.loc[:, "q_mvar"] = net.load.p_mw * tan_phi

@@ -25,6 +25,7 @@ def make_case():
         injections=injections,
         boundary=boundary,
         boundary_targets=boundary_targets,
+        rho=1.0,
         cost_coeff=10.0,
     )
     return params

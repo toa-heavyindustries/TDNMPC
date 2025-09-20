@@ -1,3 +1,12 @@
 __init__
-io
+coord
+dso
+eval
+models
+nmpc
+opt
+profiles
+sim
+tso
 utils
+viz
