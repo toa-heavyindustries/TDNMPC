@@ -1,4 +1,8 @@
-"""Configuration and output directory helpers."""
+"""Configuration and output directory helpers.
+
+Adds config discovery under `config/` and utilities to resolve a config by
+name (e.g., "demo" -> config/demo.yaml).
+"""
 
 from __future__ import annotations
 
@@ -79,3 +83,52 @@ def _slugify(value: str) -> str:
     fallback = "run"
     return "".join(safe_chars) or fallback
 
+
+# --- Config discovery helpers ---
+
+_CANDIDATE_DIRS = ("config",)
+_CANDIDATE_EXTS = (".yaml", ".yml", ".json")
+
+
+def resolve_config_path(spec: str | Path) -> Path:
+    """Resolve a config specification to a concrete file path.
+
+    - If `spec` is an existing file, return it directly.
+    - Otherwise, search in `config/`, then `cfg/`, then `configs/` and try
+      appending typical extensions.
+    """
+
+    p = Path(spec)
+    if p.exists() and p.is_file():
+        return p
+
+    name = str(spec)
+    # If the string includes an extension, try in candidate dirs directly
+    suffix = Path(name).suffix
+    names: list[str]
+    if suffix:
+        names = [name]
+    else:
+        names = [name + ext for ext in _CANDIDATE_EXTS]
+
+    for d in _CANDIDATE_DIRS:
+        base = Path(d)
+        for n in names:
+            cand = base / n
+            if cand.exists() and cand.is_file():
+                return cand
+
+    raise FileNotFoundError(f"Could not resolve config '{spec}' in {list(_CANDIDATE_DIRS)}")
+
+
+def list_available_configs() -> list[Path]:
+    """List available YAML/JSON files under known config directories."""
+
+    found: list[Path] = []
+    for d in _CANDIDATE_DIRS:
+        base = Path(d)
+        if not base.exists() or not base.is_dir():
+            continue
+        for ext in _CANDIDATE_EXTS:
+            found.extend(sorted(base.glob(f"*{ext}")))
+    return found

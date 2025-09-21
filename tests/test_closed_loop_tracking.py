@@ -15,9 +15,11 @@ def ensure_solver(name: str) -> None:
 
 
 def test_run_closed_loop_summary() -> None:
-    ensure_solver("glpk")
+    # Prefer gurobi in CI; fall back to ipopt if not available
+    solver_name = "gurobi" if (pyo.SolverFactory("gurobi") and pyo.SolverFactory("gurobi").available()) else "ipopt"
+    ensure_solver(solver_name)
     load_profile = [12.0, 12.5, 13.0, 11.8]
-    result = run_closed_loop(steps=4, amplitude=0.0, solver="glpk", load_profile=load_profile, dt_min=10.0)
+    result = run_closed_loop(steps=4, amplitude=0.0, solver=solver_name, load_profile=load_profile, dt_min=10.0)
 
     history = result.history
     assert not history.empty

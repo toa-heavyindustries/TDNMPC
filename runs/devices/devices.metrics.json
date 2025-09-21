@@ -1,9 +1,0 @@
-{
-  "vm_min": 0.8629099465629156,
-  "vm_max": 1.035,
-  "line_max_loading": 45.943234601301356,
-  "trafo_max_loading": 91.346407572278,
-  "n_storage": 3,
-  "n_caps": 3,
-  "n_tap_ctrl": 3
-}

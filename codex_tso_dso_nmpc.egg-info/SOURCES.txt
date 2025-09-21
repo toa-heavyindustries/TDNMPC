@@ -1,8 +1,0 @@
-README.md
-pyproject.toml
-codex_tso_dso_nmpc.egg-info/PKG-INFO
-codex_tso_dso_nmpc.egg-info/SOURCES.txt
-codex_tso_dso_nmpc.egg-info/dependency_links.txt
-codex_tso_dso_nmpc.egg-info/entry_points.txt
-codex_tso_dso_nmpc.egg-info/requires.txt
-codex_tso_dso_nmpc.egg-info/top_level.txt

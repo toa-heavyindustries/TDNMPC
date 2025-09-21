@@ -8,6 +8,10 @@
 - Type fix in `src/sim/runner.py` fallback: `_pd.DataFrame` -> `pd.DataFrame`.
 - Tidy long lines and unused in `scripts/build_coupled_system.py`; add experimental note.
 - Tests: `pytest -q` passing.
+- Cleanup: removed old run artifacts and caches; added ignores
+  - Deleted: `runs/*`, `logs/*`, `results/*`, `configs/`, egg-info and local caches
+  - Preserved: `归档/` as historical backup
+  - Updated `.gitignore` to ignore `runs/`, `logs/`, `results/`, and tool caches
 
 ## Baseline Network Scaffold
 - Added pandapower-based TSO case wrapper with boundary metadata (`src/tso/network.py`).
@@ -38,6 +42,10 @@
 - Added shared Pyomo dict utility and tightened solver status checks (`src/utils/pyomo_utils.py`, `src/opt/pyomo_tso.py`, `src/opt/pyomo_dso.py`).
 - Logged TSO/DSO solver failures with safe fallbacks and cleaned controller factory (`src/sim/runner.py`).
 - Introduced reusable controller base class to unify envelope handling (`src/nmpc/base.py`, `src/nmpc/controller.py`, `src/nmpc/greedy.py`).
+ - Centralized solver selection and time-limit handling (`src/utils/solver.py`), defaulting to Gurobi if available, else Ipopt. Both TSO/DSO wrappers accept `solver='auto'` and generic `time_limit_seconds`.
+ - `sim/scenario.py`: wired `solvers.time_limit_seconds` and per-solver options; fallbacks preserved.
+ - `app/main.py`: now resolves config names from `config/`, `cfg/`, `configs/`; added `--list-configs`.
+- Migrated primary configs to `config/` and updated scripts/docs to reference it exclusively. Archived old `cfg/*.yaml` to `归档/cfg_backup/`.
 - Relocated batch runner to utilities and updated callers (`src/utils/batch.py`, `src/coord/admm.py`, `src/coord/__init__.py`, `scripts/run_experiment.py`, `tests/test_batch.py`).
 - Synced README run instructions and module references with current layout (`README.md`).
 

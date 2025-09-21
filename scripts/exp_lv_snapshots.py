@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -52,58 +51,74 @@ def _run_3ph_pf(net: Any) -> None:
         pp.runpp(net, calculate_voltage_angles=True)
 
 
-def _metrics_lv(net: Any) -> dict[str, float]:
-    """Extract wide KPIs accommodating 3ph result tables if present."""
-
-    vm_vals: list[float] = []
-    line_loading: list[float] = []
-    trafo_loading: list[float] = []
-    losses_mw: float = 0.0
-
-    # Voltages
+def _collect_voltages(net: Any) -> list[float]:
+    vals: list[float] = []
     res_bus_3ph = getattr(net, "res_bus_3ph", None)
     if res_bus_3ph is not None and not res_bus_3ph.empty:
         for ph in ("a", "b", "c"):
             col = f"vm_{ph}_pu"
             if col in res_bus_3ph.columns:
-                vm_vals.extend([float(x) for x in res_bus_3ph[col].to_numpy()])
-    else:
-        res_bus = getattr(net, "res_bus", None)
-        if res_bus is not None and not res_bus.empty:
-            vm_vals.extend([float(x) for x in res_bus.vm_pu.to_numpy()])
+                vals.extend([float(x) for x in res_bus_3ph[col].to_numpy()])
+        return vals
+    res_bus = getattr(net, "res_bus", None)
+    if res_bus is not None and not res_bus.empty:
+        vals.extend([float(x) for x in res_bus.vm_pu.to_numpy()])
+    return vals
 
-    # Loading and losses
+
+def _line_loading_and_losses(net: Any) -> tuple[list[float], float]:
+    load: list[float] = []
+    losses = 0.0
     res_line_3ph = getattr(net, "res_line_3ph", None)
     if res_line_3ph is not None and not res_line_3ph.empty:
         if "loading_percent" in res_line_3ph.columns:
-            line_loading.extend([float(x) for x in res_line_3ph.loading_percent.to_numpy()])
+            load.extend([float(x) for x in res_line_3ph.loading_percent.to_numpy()])
         for ph in ("a", "b", "c"):
             plc = f"pl_{ph}_mw"
             if plc in res_line_3ph.columns:
-                losses_mw += float(res_line_3ph[plc].sum())
-    else:
-        res_line = getattr(net, "res_line", None)
-        if res_line is not None and not res_line.empty:
-            if "loading_percent" in res_line.columns:
-                line_loading.extend([float(x) for x in res_line.loading_percent.to_numpy()])
-            if "pl_mw" in res_line.columns:
-                losses_mw += float(res_line.pl_mw.sum())
+                losses += float(res_line_3ph[plc].sum())
+        return load, losses
+    res_line = getattr(net, "res_line", None)
+    if res_line is not None and not res_line.empty:
+        if "loading_percent" in res_line.columns:
+            load.extend([float(x) for x in res_line.loading_percent.to_numpy()])
+        if "pl_mw" in res_line.columns:
+            losses += float(res_line.pl_mw.sum())
+    return load, losses
 
+
+def _trafo_loading_and_losses(net: Any) -> tuple[list[float], float]:
+    load: list[float] = []
+    losses = 0.0
     res_trafo_3ph = getattr(net, "res_trafo_3ph", None)
     if res_trafo_3ph is not None and not res_trafo_3ph.empty:
         if "loading_percent" in res_trafo_3ph.columns:
-            trafo_loading.extend([float(x) for x in res_trafo_3ph.loading_percent.to_numpy()])
+            load.extend([float(x) for x in res_trafo_3ph.loading_percent.to_numpy()])
         for ph in ("a", "b", "c"):
             plc = f"pl_{ph}_mw"
             if plc in res_trafo_3ph.columns:
-                losses_mw += float(res_trafo_3ph[plc].sum())
-    else:
-        res_trafo = getattr(net, "res_trafo", None)
-        if res_trafo is not None and not res_trafo.empty:
-            if "loading_percent" in res_trafo.columns:
-                trafo_loading.extend([float(x) for x in res_trafo.loading_percent.to_numpy()])
-            if "pl_mw" in res_trafo.columns:
-                losses_mw += float(res_trafo.pl_mw.sum())
+                losses += float(res_trafo_3ph[plc].sum())
+        return load, losses
+    res_trafo = getattr(net, "res_trafo", None)
+    if res_trafo is not None and not res_trafo.empty:
+        if "loading_percent" in res_trafo.columns:
+            load.extend([float(x) for x in res_trafo.loading_percent.to_numpy()])
+        if "pl_mw" in res_trafo.columns:
+            losses += float(res_trafo.pl_mw.sum())
+    return load, losses
+
+
+def _collect_loading_and_losses(net: Any) -> tuple[list[float], list[float], float]:
+    line_loading, line_losses = _line_loading_and_losses(net)
+    trafo_loading, trafo_losses = _trafo_loading_and_losses(net)
+    return line_loading, trafo_loading, float(line_losses + trafo_losses)
+
+
+def _metrics_lv(net: Any) -> dict[str, float]:
+    """Extract wide KPIs accommodating 3ph result tables if present."""
+
+    vm_vals = _collect_voltages(net)
+    line_loading, trafo_loading, losses_mw = _collect_loading_and_losses(net)
 
     vm_arr = np.asarray(vm_vals, dtype=float) if vm_vals else np.asarray([], dtype=float)
     line_arr = np.asarray(line_loading, dtype=float) if line_loading else np.asarray([], dtype=float)

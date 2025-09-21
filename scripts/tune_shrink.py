@@ -23,7 +23,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Noise std dev for each sample (MW)",
     )
     parser.add_argument("--amplitude", type=float, default=1.0, help="Base sinusoid amplitude (MW)")
-    parser.add_argument("--solver", default="glpk", help="Pyomo solver")
+    parser.add_argument("--solver", default="gurobi", choices=["gurobi", "ipopt"], help="Pyomo solver")
     parser.add_argument("--target-quantile", type=float, default=0.95, help="Quantile for shrink sizing")
     parser.add_argument("--dt-min", type=float, default=5.0)
     parser.add_argument("--tag", default=None)

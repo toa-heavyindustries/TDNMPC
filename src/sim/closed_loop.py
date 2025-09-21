@@ -16,6 +16,7 @@ from interface import apply_reference, build_box_envelope, envelopes_to_bounds, 
 from interface.envelope import BoxEnvelope
 from opt.pyomo_tso import TSOParameters, build_tso_model, extract_solution, solve_tso_model
 from tso.network import build_tso_case, mark_boundary_buses
+from utils.solver import finalize_solver_choice
 
 
 @dataclass(slots=True)
@@ -41,7 +42,8 @@ def run_closed_loop(
     boundary_ids: Sequence[int] | None = None,
     feeder_type: str = "mv",
     feeder_peak_mw: float = 20.0,
-    solver: str = "glpk",
+    solver: str = "gurobi",
+    solver_options: dict | None = None,
     envelope_margin: float = 0.5,
     shrink: float = 0.0,
     noise_std: float = 0.0,
@@ -53,7 +55,8 @@ def run_closed_loop(
     if steps <= 0:
         raise ValueError("steps must be positive")
 
-    _ensure_solver_available(solver)
+    # Validate solver (gurobi|ipopt) and map time limit
+    selected_solver, mapped_options = finalize_solver_choice(solver, solver_options)
 
     if boundary_ids is None:
         boundary_ids = [1, 3, 5]
@@ -116,14 +119,15 @@ def run_closed_loop(
             injections=tso_case["injections"],
             boundary=tso_case["boundary"],
             boundary_targets=boundary_targets,
-            rho=1.0,
-            cost_coeff=10.0,
+            # Strongly weight target tracking in closed-loop test harness
+            rho=1e6,
+            cost_coeff=0.0,
             lower_bounds=lower_bounds,
             upper_bounds=upper_bounds,
         )
 
         model = build_tso_model(params)
-        solve_tso_model(model, solver=solver)
+        solve_tso_model(model, solver=selected_solver, options=mapped_options)
         result = extract_solution(model, params)
 
         flows = result.flows.loc[boundary_order]

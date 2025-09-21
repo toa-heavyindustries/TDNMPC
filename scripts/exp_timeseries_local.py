@@ -200,7 +200,9 @@ def main(argv: list[str] | None = None) -> None:
         vmax = float(np.max(vm_all)) if vm_all.size else float("nan")
         vviol = int(np.sum((vm_all < 0.95) | (vm_all > 1.05))) if vm_all.size else 0
     except Exception:
-        vmin = float("nan"); vmax = float("nan"); vviol = 0
+        vmin = float("nan")
+        vmax = float("nan")
+        vviol = 0
 
     summary = {
         "steps": int(n),
@@ -216,4 +218,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

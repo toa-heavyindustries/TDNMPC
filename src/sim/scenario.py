@@ -206,9 +206,16 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
         rho = float(admm_dict.get("rho", 1.0))
 
         solvers = cfg.get("solvers", {})
-        tso_solver_name = str(solvers.get("tso", "ipopt"))
-        tso_solver_options = solvers.get("tso_options", {})
-        dso_solver_name = str(solvers.get("dso", "ipopt"))
+        # Exactly one solver per run; must be 'gurobi' or 'ipopt'
+        tso_solver_name = str(solvers.get("tso", "gurobi")).lower()
+        dso_solver_name = str(solvers.get("dso", tso_solver_name)).lower()
+        # Time limit can be global or per-solver
+        global_time_limit = solvers.get("time_limit_seconds")
+        tso_solver_options = dict(solvers.get("tso_options", {}))
+        dso_solver_options = dict(solvers.get("dso_options", {}))
+        if global_time_limit is not None:
+            tso_solver_options.setdefault("time_limit_seconds", global_time_limit)
+            dso_solver_options.setdefault("time_limit_seconds", global_time_limit)
 
         ti_cfg = cfg.get("ti_envelope", {}) | env_cfg
         ti_enabled = bool(ti_cfg.get("enabled", alg in {"OUR", "B3"}))
@@ -265,7 +272,7 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
                     dt_hours = p.horizon.dt_min / 60.0
                     apply_envelope_pg_bounds(model, buses, low, up, penalty=pen, dt_hours=dt_hours)
                 try:
-                    solve_dso_model(model, solver=dso_solver_name)
+                    solve_dso_model(model, solver=dso_solver_name, options=dso_solver_options)
                     res = extract_dso_solution(model, p)
                 except Exception as exc:
                     meta.setdefault("errors", []).append({"dso_index": di, "error": str(exc)})

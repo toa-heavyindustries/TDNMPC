@@ -37,11 +37,12 @@ def test_build_dso_model_variables(simple_params) -> None:
 
 def test_solve_and_extract(simple_params) -> None:
     model = build_dso_model(simple_params)
+    solver = "gurobi" if pyo.SolverFactory("gurobi").available() else "ipopt"
     try:
-        solve_dso_model(model, solver="glpk")
+        solve_dso_model(model, solver=solver, options={"time_limit_seconds": 1})
     except RuntimeError as exc:
         if "available" in str(exc):
-            pytest.skip("GLPK solver unavailable")
+            pytest.skip("Required solver unavailable")
         raise
 
     result = extract_solution(model, simple_params)
@@ -49,4 +50,3 @@ def test_solve_and_extract(simple_params) -> None:
     assert result.voltage.min().min() >= simple_params.vmin - 1e-3
     assert result.voltage.max().max() <= simple_params.vmax + 1e-3
     assert result.objective >= 0.0
-

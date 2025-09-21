@@ -9,6 +9,7 @@ import pandas as pd
 import pyomo.environ as pyo
 
 from utils.pyomo_utils import array_to_indexed_dict
+from utils.solver import finalize_solver_choice
 from utils.timewin import Horizon
 
 
@@ -124,16 +125,36 @@ def build_dso_model(params: DSOParameters) -> pyo.ConcreteModel:
     return model
 
 
-def solve_dso_model(model: pyo.ConcreteModel, solver: str = "glpk") -> pyo.SolverResults:
-    """Solve the Pyomo model with the requested solver."""
+def solve_dso_model(
+    model: pyo.ConcreteModel,
+    solver: str = "auto",
+    options: dict | None = None,
+) -> pyo.SolverResults:
+    """Solve the Pyomo model with the requested solver.
 
-    solver_obj = pyo.SolverFactory(solver)
-    if solver_obj is None or not solver_obj.available():
-        raise RuntimeError(f"Solver {solver} is not available")
-    results = solver_obj.solve(model, tee=False)
-    if (results.solver.status != pyo.SolverStatus.ok) or (
-        results.solver.termination_condition not in {pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible}
-    ):
+    - solver must be "gurobi" or "ipopt" (configured per run)
+    - options may include a time limit (e.g., time_limit_seconds)
+    """
+
+    selected, mapped_options = finalize_solver_choice(solver, options)
+
+    def _run(name: str, opts: dict) -> pyo.SolverResults:
+        obj = pyo.SolverFactory(name)
+        if obj is None or not obj.available():
+            raise RuntimeError(f"Solver {name} is not available")
+        return obj.solve(model, tee=False, options=opts)
+
+    results = _run(selected, mapped_options)
+    term = results.solver.termination_condition
+    ok_status = results.solver.status == pyo.SolverStatus.ok
+    acceptable = {
+        pyo.TerminationCondition.optimal,
+        pyo.TerminationCondition.feasible,
+        pyo.TerminationCondition.locallyOptimal,
+        pyo.TerminationCondition.maxTimeLimit,
+        pyo.TerminationCondition.maxIterations,
+    }
+    if not ok_status and term not in acceptable:
         raise RuntimeError("DSO optimisation failed: " + str(results.solver))
     return results
 

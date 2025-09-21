@@ -23,7 +23,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Gaussian noise std dev for load requests (MW)",
     )
     parser.add_argument("--shrink", type=float, default=0.0, help="Envelope shrink margin (MW)")
-    parser.add_argument("--solver", default="glpk", help="Pyomo solver name")
+    parser.add_argument(
+        "--solver",
+        default="gurobi",
+        choices=["gurobi", "ipopt"],
+        help="Pyomo solver name",
+    )
     parser.add_argument("--feeder-peak", type=float, default=20.0, help="Feeder peak MW")
     parser.add_argument("--dt-min", type=float, default=5.0, help="Time step in minutes")
     parser.add_argument("--load-csv", type=Path, default=None, help="Optional CSV with load reference column")

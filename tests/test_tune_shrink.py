@@ -16,7 +16,9 @@ def ensure_solver(name: str) -> None:
 
 
 def test_sigma_quantile_matches_numpy() -> None:
-    ensure_solver("glpk")
+    # Prefer gurobi; fall back to ipopt
+    solver = "gurobi" if pyo.SolverFactory("gurobi").available() else "ipopt"
+    ensure_solver(solver)
 
     sigmas = []
     rng = np.random.default_rng(7)
@@ -25,7 +27,7 @@ def test_sigma_quantile_matches_numpy() -> None:
         res = run_closed_loop(
             steps=6,
             amplitude=0.0,
-            solver="glpk",
+            solver=solver,
             load_profile=load,
             noise_std=0.1,
         )

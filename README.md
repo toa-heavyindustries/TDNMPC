@@ -16,7 +16,7 @@
 
 - 提供统一入口：`codex-nmpc`
 - 用法：
-  - `uv run codex-nmpc --config cfg/smoke_test_b1.yaml`
+  - `uv run codex-nmpc --config smoke_test_b1` (resolves in `config/`)
   - 读取 YAML/JSON 配置，执行仿真，输出写入 `runs/<tag>/` 与 `logs/<tag>/`。
 - 运行结果：
   - `runs/<tag>/logs.csv`：每步 TSO/DSO 向量、残差与 envelope
@@ -249,7 +249,7 @@ def forecast_sma(series: pd.Series, horizon: int, w: int = 6) -> np.ndarray
 ## Step 12｜仿真编排器
 
 **目标**：把时序、预测、NMPC、网络、协调串起来跑一套场景。
-**文件**：`sim/runner.py`, `scripts/run_experiment.py`, `cfg/demo.yaml`
+**文件**：`sim/runner.py`, `scripts/run_experiment.py`, `config/demo.yaml`
 **函数**
 
 ```python
@@ -257,7 +257,7 @@ def simulate_scenario(cfg_path: Path) -> dict[str, Any]
 def simulate_step(state: dict, t: int) -> dict
 ```
 
-**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_experiment --cfg cfg/demo.yaml`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_experiment --cfg config/demo.yaml`
 **期望输出**：`runs/<tag>/logs.csv`、中间控制量、接口残差。
 **验收**：整套无异常，关键指标生成。
 

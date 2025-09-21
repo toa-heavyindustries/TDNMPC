@@ -16,7 +16,7 @@ from utils.config import load_config
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cfg", required=True, type=Path, help="Scenario configuration file")
+    parser.add_argument("--cfg", required=True, type=Path, help="Scenario configuration file (prefer config/)")
     parser.add_argument("--tag", help="Override run tag")
     parser.add_argument("--base", help="Override run base directory")
     parser.add_argument("--seeds", type=int, nargs="*", help="Batch seeds to execute")

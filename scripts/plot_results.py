@@ -8,12 +8,12 @@ Extended to also:
 from __future__ import annotations
 
 import argparse
+import json
 from ast import literal_eval
 from pathlib import Path
 
-import json
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 
@@ -109,13 +109,8 @@ def plot_pcc_trajectory(logs: pd.DataFrame, run_dir: Path) -> None:
     except Exception as e:
         print(f"Failed to generate PCC trajectory plot: {e}")
 
-def main(argv: list[str] | None = None) -> None:
-    args = parse_args(argv)
-    run_dir = args.run_dir
-    logs_path = run_dir / "logs.csv"
-    logs = pd.read_csv(logs_path) if logs_path.exists() else pd.DataFrame()
-
-    if not logs.empty and {"step","residual_max","residual_mean"}.issubset(logs.columns):
+def _plot_residuals_if_any(logs: pd.DataFrame, run_dir: Path) -> None:
+    if not logs.empty and {"step", "residual_max", "residual_mean"}.issubset(logs.columns):
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(logs["step"], logs["residual_max"], label="residual_max")
         ax.plot(logs["step"], logs["residual_mean"], label="residual_mean")
@@ -127,8 +122,7 @@ def main(argv: list[str] | None = None) -> None:
         fig.tight_layout()
         fig.savefig(run_dir / "residuals.png")
         plt.close(fig)
-
-    # Parse vector columns and plot per-interface time series
+def _plot_interfaces_if_any(logs: pd.DataFrame, run_dir: Path) -> None:
     if {"tso_vector", "dso_vector"}.issubset(logs.columns):
         try:
             tso_vectors = logs["tso_vector"].apply(literal_eval)
@@ -161,11 +155,8 @@ def main(argv: list[str] | None = None) -> None:
         except Exception:
             pass
 
-    if not logs.empty:
-        plot_voltage_heatmap(logs, run_dir)
-        plot_pcc_trajectory(logs, run_dir)
 
-    # LV snapshots: plot KPIs from summary if present
+def _plot_lv_snapshots_if_any(run_dir: Path) -> None:
     lv_summary = run_dir / "lv_snapshots.summary.json"
     if lv_summary.exists():
         try:
@@ -182,7 +173,7 @@ def main(argv: list[str] | None = None) -> None:
             ax.axhline(0.95, color="green", linestyle="--", linewidth=1)
             ax.axhline(1.05, color="green", linestyle="--", linewidth=1)
             ax.set_xticks(x, cases, rotation=20)
-            ax.set_ylim(0.9, max(1.08, max(vm_max)+0.01))
+            ax.set_ylim(0.9, max(1.08, max(vm_max) + 0.01))
             ax.set_ylabel("Voltage (p.u.)")
             ax.set_title("LV Snapshots: Voltage Range")
             ax.legend()
@@ -200,7 +191,8 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as e:  # pragma: no cover
             print(f"Failed to plot LV snapshots: {e}")
 
-    # Timeseries local run: plot voltage heatmap and SoC if present
+
+def _plot_timeseries_if_any(run_dir: Path) -> None:
     res_bus_dir = run_dir / "res_bus"
     if res_bus_dir.exists():
         try:
@@ -218,6 +210,21 @@ def main(argv: list[str] | None = None) -> None:
                 plt.close(fig)
         except Exception as e:  # pragma: no cover
             print(f"Failed to plot timeseries voltages: {e}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    run_dir = args.run_dir
+    logs_path = run_dir / "logs.csv"
+    logs = pd.read_csv(logs_path) if logs_path.exists() else pd.DataFrame()
+
+    _plot_residuals_if_any(logs, run_dir)
+    if not logs.empty:
+        plot_voltage_heatmap(logs, run_dir)
+        plot_pcc_trajectory(logs, run_dir)
+        _plot_interfaces_if_any(logs, run_dir)
+    _plot_lv_snapshots_if_any(run_dir)
+    _plot_timeseries_if_any(run_dir)
 
     soc_csv = run_dir / "soc.csv"
     if soc_csv.exists():

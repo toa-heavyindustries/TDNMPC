@@ -31,8 +31,13 @@ def main(argv: list[str] | None = None) -> None:
         if p.exists():
             lines.append(f"- `{name}`")
 
+    # Include pngs in root and immediate subdirectories (e.g., 'admm/')
     for img in sorted(run_dir.glob("*.png")):
         lines.append(f"- {img.name}")
+    for sub in sorted([p for p in run_dir.iterdir() if p.is_dir()]):
+        for img in sorted(sub.glob("*.png")):
+            rel = sub.name + "/" + img.name
+            lines.append(f"- {rel}")
 
     md = "\n".join(lines) + "\n"
     (run_dir / "INDEX.md").write_text(md)
@@ -40,4 +45,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

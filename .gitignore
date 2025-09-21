@@ -21,3 +21,12 @@ dist/
 # IDE
 .idea/
 .vscode/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+
+# Run artifacts
+runs/
+logs/
+results/

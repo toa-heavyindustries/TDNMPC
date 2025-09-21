@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 import numpy as np
 import pandapower as pp
@@ -22,7 +21,6 @@ from sim.base_networks import (
     assemble_baseline_network,
     plan_baseline_coupled_system,
 )
-from tso.network import build_tso_pandapower
 from utils.config import ensure_run_dir
 
 
@@ -50,8 +48,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     run_dir = ensure_run_dir(args.tag)
 
-    # Ensure boundary selection on case118 picks top-3 load buses
-    tso = build_tso_pandapower(args.case)
+    # Ensure boundary selection on case118 picks top-3 load buses (implicitly via plan)
     spec = _pick_spec(args.trafo_mva)
 
     plan: BaselineCoupledSystem = plan_baseline_coupled_system(
@@ -84,4 +81,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

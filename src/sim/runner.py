@@ -101,6 +101,17 @@ def simulate(cfg: dict[str, Any]) -> dict[str, Any]:
     write_wide_trace(df, run_dir)
     write_summary_and_figs(df, history, run_dir)
 
+    # Plotting/artifact configuration (to reduce file explosion)
+    plots_cfg = cfg.get("plots", {}) if isinstance(cfg.get("plots", {}), dict) else {}
+    admm_step_cfg = plots_cfg.get("admm_per_step", {}) if isinstance(plots_cfg.get("admm_per_step", {}), dict) else {}
+    admm_enabled = bool(admm_step_cfg.get("enabled", True))
+    admm_stride = int(admm_step_cfg.get("stride", 0))  # 0 -> no step-indexed snapshots
+    admm_latest_only = bool(admm_step_cfg.get("latest_only", True))
+    admm_dir = admm_step_cfg.get("dir")
+
+    per_step_out_dir = run_dir / admm_dir if admm_dir else run_dir
+    per_step_out_dir.mkdir(parents=True, exist_ok=True)
+
     combined_rows: list[dict[str, float]] = []
     for t, hist in enumerate(admm_histories):
         if not hist:
@@ -108,10 +119,29 @@ def simulate(cfg: dict[str, Any]) -> dict[str, Any]:
         hdf = pd.DataFrame(hist)
         csv_path = run_dir / f"admm_history_step_{t}.csv"
         hdf.to_csv(csv_path, index=False)
-        try:
-            plot_convergence(hdf.set_index("iter"), run_dir / f"admm_conv_step_{t}.png")
-        except Exception:
-            pass
+        # Step-wise convergence plots with configurable saving strategy
+        if admm_enabled:
+            # Always create the figure target but decide naming by config
+            try:
+                if admm_latest_only:
+                    # Overwrite a single latest file (reduced clutter)
+                    plot_convergence(
+                        hdf.set_index("iter"),
+                        per_step_out_dir / "admm_conv_latest.png",
+                    )
+                else:
+                    # Save snapshots every `stride` steps, if configured
+                    should_save = admm_stride > 0 and (t % admm_stride == 0)
+                    # Always save final step for reference
+                    should_save = should_save or (t == len(admm_histories) - 1)
+                    if should_save:
+                        plot_convergence(
+                            hdf.set_index("iter"),
+                            per_step_out_dir / f"admm_conv_step_{t}.png",
+                        )
+            except Exception:
+                # Plotting should never break the run; ignore errors
+                pass
         hdf = hdf.copy()
         hdf["step"] = t
         combined_rows.extend(hdf.to_dict(orient="records"))
@@ -122,6 +152,7 @@ def simulate(cfg: dict[str, Any]) -> dict[str, Any]:
         try:
             from viz.plots import plot_convergence_multi
 
+            # Keep the aggregated plot at the run root for discoverability
             plot_convergence_multi(all_df, run_dir / "admm_convergence_all.png")
         except Exception:
             pass
@@ -136,4 +167,3 @@ def simulate(cfg: dict[str, Any]) -> dict[str, Any]:
 def simulate_scenario(cfg_path: Path | str) -> dict[str, Any]:
     cfg = load_config(cfg_path)
     return simulate(cfg)
-

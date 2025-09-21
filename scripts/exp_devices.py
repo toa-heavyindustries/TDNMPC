@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 import numpy as np
 import pandapower as pp
@@ -32,7 +31,6 @@ from sim.base_networks import (
     plan_baseline_coupled_system,
 )
 from utils.config import ensure_run_dir
-import pandas as pd
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
