@@ -7,7 +7,6 @@ from pathlib import Path
 from dso.network import build_cigre_feeder
 from interface.adapter import measure_boundary
 from interface.envelope import (
-    BoxEnvelope,
     build_box_envelope,
     envelopes_to_bounds,
     export_envelopes,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -181,7 +180,6 @@ def apply_envelope_pg_bounds(
         Time step in hours (scales penalty to energy-equivalent if desired).
     """
 
-    import numpy as _np
 
     buses = list(bus_indices)
     T = sorted(model.T)

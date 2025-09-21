@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandapower as pp
-import pandapower.networks as pn
+
+"""Helper script to compose a coupled network.
+
+Note: this script is experimental and not used by tests. Keep style simple.
+"""
 
 
 def main() -> None:
@@ -51,7 +55,8 @@ def main() -> None:
         "shift_degree": 0.0 # Added missing parameter
     }, element="trafo", name="345_115_custom")
 
-    new_dso_bus_indices = [] # To store the new bus indices of the merged DSOs
+    # To store the new bus indices of the merged DSOs (kept for future use)
+    # new_dso_bus_indices: list[int] = []
 
     # 3. Loop through TSO connection buses and add DSOs
     for i, tso_bus_idx in enumerate(tso_connection_buses):
@@ -60,17 +65,40 @@ def main() -> None:
         net_dso = net_dso_template.copy()
 
         # Step 1: Add 345/115 kV Transformer and Intermediate Bus
-        intermediate_bus_115kv = pp.create_bus(net_combined, name=f"TSO_Bus_{tso_bus_idx}_to_DSO_{i+1}_115kV", vn_kv=115.0)
-        pp.create_transformer(net=net_combined, hv_bus=tso_bus_idx, lv_bus=intermediate_bus_115kv, std_type="345_115_custom")
+        intermediate_bus_115kv = pp.create_bus(
+            net_combined,
+            name=f"TSO_Bus_{tso_bus_idx}_to_DSO_{i+1}_115kV",
+            vn_kv=115.0,
+        )
+        pp.create_transformer(
+            net=net_combined,
+            hv_bus=tso_bus_idx,
+            lv_bus=intermediate_bus_115kv,
+            std_type="345_115_custom",
+        )
 
         # Step 2: Add 115/12.47 kV Transformer and PCC Bus
-        pcc_bus_12kv = pp.create_bus(net_combined, name=f"DSO_{i+1}_PCC_12kV", vn_kv=12.47)
-        pp.create_transformer(net=net_combined, hv_bus=intermediate_bus_115kv, lv_bus=pcc_bus_12kv, std_type="115_12_custom")
+        pcc_bus_12kv = pp.create_bus(
+            net_combined,
+            name=f"DSO_{i+1}_PCC_12kV",
+            vn_kv=12.47,
+        )
+        pp.create_transformer(
+            net=net_combined,
+            hv_bus=intermediate_bus_115kv,
+            lv_bus=pcc_bus_12kv,
+            std_type="115_12_custom",
+        )
 
         # Step 3: Merge DSO Network
         # The ppc_bus argument is the bus in net_b (net_dso) that connects to net_a (net_combined)
         # The net_b_pcc_bus argument is the bus in net_a (net_combined) that net_b connects to
-        pp.merge_nets(net_combined, net_dso, ppc_bus=net_dso.bus.index[dso_pcc_bus], net_b_pcc_bus=pcc_bus_12kv)
+        pp.merge_nets(
+            net_combined,
+            net_dso,
+            ppc_bus=net_dso.bus.index[dso_pcc_bus],
+            net_b_pcc_bus=pcc_bus_12kv,
+        )
 
         # Placeholder for merged DSO's PCC bus
         # This will be the bus in net_combined that the DSO's original PCC bus maps to

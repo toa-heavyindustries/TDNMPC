@@ -14,10 +14,11 @@ import json
 import logging
 from pathlib import Path
 
+import pandapower as pp
+
 from dso import ac_power_flow, build_ieee33, export_net
 from models import linearize_lindistflow, validate_linearization
 from utils import ensure_run_dir
-import pandapower as pp
 
 LOGGER = logging.getLogger("dso")
 
@@ -74,9 +75,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Detailed sensitivity evaluation and histogram (per 基本实验.md)
     try:
+        import matplotlib.pyplot as plt
         import numpy as np
         import pandas as pd
-        import matplotlib.pyplot as plt
 
         rng = np.random.default_rng(42)
         pv_buses = net.load.bus.to_numpy()

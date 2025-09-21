@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 
 def setup_structured_logging(
@@ -12,7 +11,7 @@ def setup_structured_logging(
     *,
     log_file: str = "runner.log",
     level: int = logging.INFO,
-    fmt: Optional[str] = None,
+    fmt: str | None = None,
 ) -> logging.Logger:
     """Configure logging to write both to console and a dedicated log file."""
 

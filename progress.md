@@ -1,5 +1,14 @@
 # Project Progress Log
 
+## 2025-09-21
+- Add CLI entrypoint `src/app/main.py`; `codex-nmpc --config` now runs scenarios.
+- Code quality: pass ruff checks; update `pyproject.toml` with line-length=120, ignore `E501`, and per-file ignore `C901` for `src/sim/runner.py`.
+- Fix missing `strict` in `zip(...)`: `src/viz/plots.py`, `tests/test_timewin.py`.
+- Remove/organize unused imports/vars: `tests/test_plots.py`, `tests/test_sim_runner.py`, `scripts/plot_closed_loop.py`, `tests/test_envelope.py`.
+- Type fix in `src/sim/runner.py` fallback: `_pd.DataFrame` -> `pd.DataFrame`.
+- Tidy long lines and unused in `scripts/build_coupled_system.py`; add experimental note.
+- Tests: `pytest -q` passing.
+
 ## Baseline Network Scaffold
 - Added pandapower-based TSO case wrapper with boundary metadata (`src/tso/network.py`).
 - Scaled CIGRE MV/LV feeder builder and metadata container (`src/dso/network.py`).

@@ -13,7 +13,6 @@ from coord.interface import coupling_residuals
 from coord.ti_env import Envelope
 from nmpc.base import BaseController, EnvelopeConfig
 
-
 TSOSolver = Callable[[np.ndarray], tuple[np.ndarray, Any]]
 DSOSolver = Callable[[np.ndarray], tuple[np.ndarray, Any]]
 

@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
-
 import pandapower as pp
+import pytest
 
 from dso.network import build_cigre_feeder
 from sim import assemble_baseline_network, plan_baseline_coupled_system

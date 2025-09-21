@@ -7,13 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-
 if TYPE_CHECKING:  # pragma: no cover
     from tso.network import TsoPandapowerCase
 
 
 def define_coupling(
-    tso_case: dict[str, Any] | "TsoPandapowerCase",
+    tso_case: dict[str, Any] | TsoPandapowerCase,
     dso_nets: list[Any],
     mapping: dict[int, tuple[int, int]],
 ) -> dict[str, np.ndarray]:
@@ -81,7 +80,7 @@ def define_coupling(
     return coupler
 
 
-def _extract_boundary_array(tso_case: dict[str, Any] | "TsoPandapowerCase") -> np.ndarray:
+def _extract_boundary_array(tso_case: dict[str, Any] | TsoPandapowerCase) -> np.ndarray:
     """Return a boundary bus array for legacy dicts or new dataclass inputs."""
 
     if isinstance(tso_case, dict):

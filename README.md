@@ -12,6 +12,24 @@
 ---
 程序接口仅供参考
 
+## 运行场景（CLI）
+
+- 提供统一入口：`codex-nmpc`
+- 用法：
+  - `uv run codex-nmpc --config cfg/smoke_test_b1.yaml`
+  - 读取 YAML/JSON 配置，执行仿真，输出写入 `runs/<tag>/` 与 `logs/<tag>/`。
+- 运行结果：
+  - `runs/<tag>/logs.csv`：每步 TSO/DSO 向量、残差与 envelope
+  - `runs/<tag>/figs/`：默认绘制第 0 接口的 TSO/DSO 轨迹
+  - `runs/<tag>/admm_history_step_*.csv/png` 与 `admm_history_all.csv/png`
+  - `logs/<tag>/metrics.csv`：精简指标
+
+## 模块结构（更新）
+
+- `sim.runner`：仅负责编排步骤与写入产物。
+- `sim.scenario`：构建场景与控制器（toy 与集成模式）。
+- `sim.io_utils`：日志初始化、历史/指标/概要与图表写入。
+
 ## Step 1｜M1：时序曲线（Profiles）
 
 **目标**：生成/加载 24h 负荷、PV、温度曲线，保存 CSV 并可视化。

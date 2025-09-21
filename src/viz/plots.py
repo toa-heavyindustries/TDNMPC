@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -72,7 +71,7 @@ def plot_convergence_multi(hist: pd.DataFrame, out: Path) -> None:
         axes[0].plot(sub["iter"], sub["primal_residual"], alpha=0.35)
         axes[1].plot(sub["iter"], sub["dual_residual"], alpha=0.35)
 
-    for ax, title in zip(axes, ("primal", "dual")):
+    for ax, title in zip(axes, ("primal", "dual"), strict=False):
         ax.set_yscale("log")
         ax.set_xlabel("iteration")
         ax.set_ylabel("residual")

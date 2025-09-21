@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandapower as pp
-import pandapower.networks as pn
-import pypower.api
 import pandapower.converter
+import pandapower.networks as pn
 
 
 def main() -> None:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
-import pandas as pd
 import pandapower as pp
+import pandas as pd
 import pyomo.environ as pyo
 
 from dso.network import build_cigre_feeder
@@ -66,7 +66,7 @@ def run_closed_loop(
 
     feeders = [build_cigre_feeder(feeder_type, target_peak_mw=feeder_peak_mw) for _ in boundary_order]
     envelopes: list[BoxEnvelope] = []
-    for feeder, bus in zip(feeders, boundary_order):
+    for feeder, bus in zip(feeders, boundary_order, strict=False):
         env = build_box_envelope(feeder, p_margin=None, q_margin=None)
         env.metadata["boundary_bus"] = bus
         envelopes.append(env)
@@ -91,7 +91,7 @@ def run_closed_loop(
         voltage_max = float("-inf")
         voltage_violations = 0
 
-        for env, feeder, bus in zip(envelopes, feeders, boundary_order):
+        for env, feeder, bus in zip(envelopes, feeders, boundary_order, strict=False):
             base_p, base_q, _ = measure_boundary(feeder.net)
             if load_profile is not None and step < len(load_profile):
                 target_raw = float(load_profile[step])

@@ -22,7 +22,7 @@ def test_rolling_windows_no_overlap() -> None:
     assert len(windows) == 3
     for w in windows:
         assert len(w) == 4
-    for first, second in zip(windows, windows[1:]):
+    for first, second in zip(windows, windows[1:], strict=False):
         assert first[-1] < second[0]
 
 
@@ -34,4 +34,3 @@ def test_align_profiles_fills_missing() -> None:
     assert df.iloc[0, 0] == pytest.approx(1.0)
     assert df.iloc[-1, 0] == pytest.approx(3.0)
     assert df.index.name == "time"
-

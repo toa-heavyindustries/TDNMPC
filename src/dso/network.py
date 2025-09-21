@@ -10,13 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandapower as pp
 import pandapower.networks as pn
 import pandas as pd
-import numpy as np
 
 from models.lindistflow import linearize_lindistflow
-
 
 IEE33_LINE_DATA = [
     (1, 2, 0.0922, 0.0470),

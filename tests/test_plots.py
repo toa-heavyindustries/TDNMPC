@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
-import numpy as np
 import pandas as pd
 
 matplotlib.use("Agg")
@@ -25,4 +24,3 @@ def test_plot_convergence_requires_columns(tmp_path: Path) -> None:
     out = tmp_path / "conv.png"
     plot_convergence(hist, out)
     assert out.exists()
-

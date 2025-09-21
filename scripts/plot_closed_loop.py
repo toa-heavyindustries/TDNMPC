@@ -20,7 +20,6 @@ def main(argv: list[str] | None = None) -> None:
     df = pd.read_csv(args.history)
 
     out_dir = args.history.parent
-    steps = df["step"].unique()
 
     fig, ax = plt.subplots(figsize=(8, 4))
     for bus, group in df.groupby("bus"):

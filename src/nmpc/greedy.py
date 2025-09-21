@@ -14,7 +14,6 @@ import numpy as np
 from nmpc.base import BaseController, EnvelopeConfig
 from nmpc.controller import NMPCStepResult
 
-
 DSOSolver = Callable[[np.ndarray], tuple[np.ndarray, Any]]
 
 

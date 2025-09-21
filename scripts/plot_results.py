@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from ast import literal_eval
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd

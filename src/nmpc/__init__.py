@@ -1,5 +1,5 @@
 """NMPC orchestration utilities."""
 
-from .controller import NMPCController, NMPCConfig
+from .controller import NMPCConfig, NMPCController
 
 __all__ = ["NMPCConfig", "NMPCController"]

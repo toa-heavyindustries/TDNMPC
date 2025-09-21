@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from sim.runner import simulate_scenario
@@ -37,4 +36,3 @@ def test_simulate_scenario_produces_logs(tmp_path: Path) -> None:
     summary = json.loads((run_dir / "summary.json").read_text())
     assert summary["steps"] == cfg["time"]["steps"]
     assert summary["final_residual"] < 1e-5
-
