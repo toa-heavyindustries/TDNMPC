@@ -127,7 +127,7 @@ def build_dso_model(params: DSOParameters) -> pyo.ConcreteModel:
 
 def solve_dso_model(
     model: pyo.ConcreteModel,
-    solver: str = "auto",
+    solver: str = "gurobi",
     options: dict | None = None,
 ) -> pyo.SolverResults:
     """Solve the Pyomo model with the requested solver.

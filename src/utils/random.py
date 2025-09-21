@@ -8,9 +8,9 @@ import random
 import numpy as np
 
 try:  # pragma: no cover - optional dependency
-    import torch
-except ImportError:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
+    import torch  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover
+    torch = None
 
 
 def set_global_seed(seed: int, *, deterministic: bool = True) -> None:
@@ -26,7 +26,11 @@ def set_global_seed(seed: int, *, deterministic: bool = True) -> None:
     if torch is not None:
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.use_deterministic_algorithms(bool(deterministic))
+        try:
+            torch.use_deterministic_algorithms(bool(deterministic))
+        except Exception:
+            # Older torch versions may not support this API
+            pass
 
 
 def seed_sequence(base_seed: int, count: int) -> list[int]:

@@ -225,7 +225,7 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
                 dso_params, dso_indices, dso_bus_indices, ti_cfg, cfg.get("forecast", {})
             )
 
-        def tso_solver(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+        def solve_tso_step(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
             params = TSOParameters(
                 admittance=Y,
                 injections=injections,
@@ -258,7 +258,7 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
             }
             return flows_vec, meta
 
-        def dso_solver(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+        def solve_dso_step(v: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
             meta: dict[str, Any] = {"dso_objs": [], "dso_voltages": []}
             solved: list[tuple[DSOParameters, Any]] = []
             for di, p in enumerate(dso_params):
@@ -325,8 +325,8 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
                 NMPCConfig(
                     size=size,
                     admm=admm_cfg,
-                    tso_solver=tso_solver,
-                    dso_solver=dso_solver,
+                    tso_solver=solve_tso_step,
+                    dso_solver=solve_dso_step,
                     envelope_margin=float(env_cfg.get("margin", 0.05)),
                     envelope_alpha=float(env_cfg.get("alpha", 0.3)),
                 )
@@ -336,8 +336,8 @@ def build_scenario(cfg: dict[str, Any]) -> ScenarioState:
                 NMPCConfig(
                     size=size,
                     admm=admm_cfg,
-                    tso_solver=tso_solver,
-                    dso_solver=dso_solver,
+                    tso_solver=solve_tso_step,
+                    dso_solver=solve_dso_step,
                     envelope_margin=float(env_cfg.get("margin", 0.05)),
                     envelope_alpha=float(env_cfg.get("alpha", 0.3)),
                 )

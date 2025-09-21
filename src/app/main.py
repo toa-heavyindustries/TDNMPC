@@ -1,7 +1,8 @@
 """Command-line entrypoint for running NMPC simulations.
 
 Usage examples (via uv):
-  uv run codex-nmpc --config smoke_test_b1
+  uv run main --config demo
+  uv run main --config smoke_test_b1
 """
 
 from __future__ import annotations

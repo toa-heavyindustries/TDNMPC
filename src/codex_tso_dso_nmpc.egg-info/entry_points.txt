@@ -1,2 +1,3 @@
 [console_scripts]
 codex-nmpc = app.main:main
+main = app.main:main

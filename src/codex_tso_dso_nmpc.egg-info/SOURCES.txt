@@ -46,6 +46,7 @@ src/utils/config.py
 src/utils/logging_utils.py
 src/utils/pyomo_utils.py
 src/utils/random.py
+src/utils/solver.py
 src/utils/timewin.py
 src/viz/__init__.py
 src/viz/plots.py

@@ -1,7 +1,8 @@
 """Configuration and output directory helpers.
 
 Adds config discovery under `config/` and utilities to resolve a config by
-name (e.g., "demo" -> config/demo.yaml).
+name (e.g., "demo" -> config/demo.yaml). Only the `config/` directory is
+considered for discovery to avoid ambiguity with legacy paths.
 """
 
 from __future__ import annotations
@@ -42,10 +43,12 @@ def load_config(path: str | Path) -> dict[str, Any]:
     suffix = cfg_path.suffix.lower()
     with cfg_path.open("r", encoding="utf-8") as handle:
         if suffix == ".json":
-            return json.load(handle)
+            data_json: dict[str, Any] = json.load(handle)
+            return data_json
         if suffix in {".yaml", ".yml"}:
-            data = yaml.safe_load(handle)
-            return data if isinstance(data, dict) else {}
+            loaded = yaml.safe_load(handle)
+            data_yaml: dict[str, Any] = loaded if isinstance(loaded, dict) else {}
+            return data_yaml
 
     raise ValueError(f"Unsupported config format: {cfg_path.suffix}")
 
@@ -94,8 +97,7 @@ def resolve_config_path(spec: str | Path) -> Path:
     """Resolve a config specification to a concrete file path.
 
     - If `spec` is an existing file, return it directly.
-    - Otherwise, search in `config/`, then `cfg/`, then `configs/` and try
-      appending typical extensions.
+    - Otherwise, search in `config/` and try appending typical extensions.
     """
 
     p = Path(spec)

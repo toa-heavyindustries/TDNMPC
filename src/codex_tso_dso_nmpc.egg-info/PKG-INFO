@@ -29,6 +29,24 @@ Requires-Dist: pypower>=5.1.19
 ---
 程序接口仅供参考
 
+## 运行场景（CLI）
+
+- 提供统一入口：`main`（别名：`codex-nmpc`）
+- 用法：
+  - `uv run main --config smoke_test_b1` (resolves in `config/`)
+  - 读取 YAML/JSON 配置，执行仿真，输出写入 `runs/<tag>/` 与 `logs/<tag>/`。
+- 运行结果：
+  - `runs/<tag>/logs.csv`：每步 TSO/DSO 向量、残差与 envelope
+  - `runs/<tag>/figs/`：默认绘制第 0 接口的 TSO/DSO 轨迹
+  - `runs/<tag>/admm_history_step_*.csv/png` 与 `admm_history_all.csv/png`
+  - `logs/<tag>/metrics.csv`：精简指标
+
+## 模块结构（更新）
+
+- `sim.runner`：仅负责编排步骤与写入产物。
+- `sim.scenario`：构建场景与控制器（toy 与集成模式）。
+- `sim.io_utils`：日志初始化、历史/指标/概要与图表写入。
+
 ## Step 1｜M1：时序曲线（Profiles）
 
 **目标**：生成/加载 24h 负荷、PV、温度曲线，保存 CSV 并可视化。
@@ -248,7 +266,7 @@ def forecast_sma(series: pd.Series, horizon: int, w: int = 6) -> np.ndarray
 ## Step 12｜仿真编排器
 
 **目标**：把时序、预测、NMPC、网络、协调串起来跑一套场景。
-**文件**：`sim/runner.py`, `scripts/run_experiment.py`, `cfg/demo.yaml`
+**文件**：`sim/runner.py`, `scripts/run_experiment.py`, `config/demo.yaml`
 **函数**
 
 ```python
@@ -256,7 +274,7 @@ def simulate_scenario(cfg_path: Path) -> dict[str, Any]
 def simulate_step(state: dict, t: int) -> dict
 ```
 
-**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_experiment --cfg cfg/demo.yaml`
+**运行**：`uv run python -m codex_tso_dso_nmpc.scripts.run_experiment --cfg config/demo.yaml`
 **期望输出**：`runs/<tag>/logs.csv`、中间控制量、接口残差。
 **验收**：整套无异常，关键指标生成。
 

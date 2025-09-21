@@ -11,7 +11,7 @@ import numpy as np
 def array_to_indexed_dict(
     values: np.ndarray,
     index_sets: Sequence[Iterable[int]] | None = None,
-) -> dict:
+) -> dict[int | tuple[int, int], float]:
     """Convert a 1D or 2D numpy array into a Pyomo-friendly dictionary.
 
     Parameters

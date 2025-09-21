@@ -23,6 +23,7 @@ dependencies = [
 # 入口脚本（需要 package=true 或声明 build-system 才会生效）
 [project.scripts]
 codex-nmpc = "app.main:main"
+main = "app.main:main"
 
 # ---------------------------
 # 依赖分组（PEP 735；用于开发/并行等非发布场景）
@@ -117,3 +118,23 @@ fail_under = 80
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = []
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_any_generics = true
+no_implicit_optional = true
+check_untyped_defs = true
+explicit_package_bases = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "pandas.*",
+  "pyomo.*",
+  "pandapower.*",
+  "yaml",
+]
+ignore_missing_imports = true

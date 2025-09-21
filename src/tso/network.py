@@ -114,7 +114,9 @@ class TsoPandapowerCase:
         return [str(bus.at[idx, "name"]) for idx in self.boundary_buses]
 
 
-_PANDAPOWER_CASES: dict[str, callable[[], pp.pandapowerNet]] = {
+from typing import Callable
+
+_PANDAPOWER_CASES: dict[str, Callable[[], pp.pandapowerNet]] = {
     "case39": pn.case39,
     "case118": pn.case118,
 }
@@ -195,10 +197,11 @@ def _infer_boundary_defaults(net: pp.pandapowerNet) -> list[int]:
     try:
         load_df = net.load
     except Exception:  # pragma: no cover - defensive path
-        load_df = None  # type: ignore[assignment]
+        load_df = None
 
     if load_df is None or load_df.empty or "p_mw" not in load_df.columns:
-        return net.bus.index.tolist()[: min(3, len(net.bus))]
+        base = net.bus.index.tolist()[: min(3, len(net.bus))]
+        return [int(b) for b in base]
 
     agg = (
         load_df.groupby("bus")["p_mw"]
@@ -207,7 +210,8 @@ def _infer_boundary_defaults(net: pp.pandapowerNet) -> list[int]:
     )
     candidates = [int(b) for b in agg.index.tolist() if float(agg.loc[b]) > 0.0]
     if not candidates:
-        return net.bus.index.tolist()[: min(3, len(net.bus))]
+        base = net.bus.index.tolist()[: min(3, len(net.bus))]
+        return [int(b) for b in base]
     return candidates[:3]
 
 

@@ -1,7 +1,7 @@
 # Project Progress Log
 
 ## 2025-09-21
-- Add CLI entrypoint `src/app/main.py`; `codex-nmpc --config` now runs scenarios.
+- Add CLI entrypoint `src/app/main.py`; prefer `uv run main --config <name>` (alias: `uv run codex-nmpc`).
 - Code quality: pass ruff checks; update `pyproject.toml` with line-length=120, ignore `E501`, and per-file ignore `C901` for `src/sim/runner.py`.
 - Fix missing `strict` in `zip(...)`: `src/viz/plots.py`, `tests/test_timewin.py`.
 - Remove/organize unused imports/vars: `tests/test_plots.py`, `tests/test_sim_runner.py`, `scripts/plot_closed_loop.py`, `tests/test_envelope.py`.
@@ -54,10 +54,10 @@
 - [x] 24h timeseries (no coordination) using DFData/ConstControl, logs voltages/loading/PCC/BESS and SoC → runs/ts_local/*
   - command: `uv run python scripts/exp_timeseries_local.py --tag ts_local --dt-min 5`
 - [x] TI-NMPC wrapper hooked to scenario configs (OUR/B3) → runs/smoke_test_our
-  - command: `uv run python scripts/exp_tinmpc.py --cfg cfg/smoke_test_our.yaml --tag our_demo`
+  - command: `uv run python scripts/exp_tinmpc.py --cfg config/smoke_test_our.yaml --tag our_demo`
 
 - [x] KPI aggregator added: `scripts/aggregate_kpis.py` → writes `report.json/csv`
-- [x] 24h TI configs prepared: `cfg/ti24h_our.yaml`, `cfg/ti24h_b3.yaml`
-  - run: `uv run python scripts/exp_tinmpc.py --cfg cfg/ti24h_our.yaml --tag ti24h_our`
-  - run: `uv run python scripts/exp_tinmpc.py --cfg cfg/ti24h_b3.yaml --tag ti24h_b3`
+- [x] 24h TI configs prepared: `config/ti24h_our.yaml`, `config/ti24h_b3.yaml`
+  - run: `uv run python scripts/exp_tinmpc.py --cfg config/ti24h_our.yaml --tag ti24h_our`
+  - run: `uv run python scripts/exp_tinmpc.py --cfg config/ti24h_b3.yaml --tag ti24h_b3`
 - [x] Run index writer: `scripts/make_run_index.py` to generate `INDEX.md` per run

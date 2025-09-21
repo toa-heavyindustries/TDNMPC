@@ -14,9 +14,9 @@
 
 ## 运行场景（CLI）
 
-- 提供统一入口：`codex-nmpc`
+- 提供统一入口：`main`（别名：`codex-nmpc`）
 - 用法：
-  - `uv run codex-nmpc --config smoke_test_b1` (resolves in `config/`)
+  - `uv run main --config smoke_test_b1` (resolves in `config/`)
   - 读取 YAML/JSON 配置，执行仿真，输出写入 `runs/<tag>/` 与 `logs/<tag>/`。
 - 运行结果：
   - `runs/<tag>/logs.csv`：每步 TSO/DSO 向量、残差与 envelope

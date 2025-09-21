@@ -206,7 +206,7 @@ def _init_objective(model: pyo.ConcreteModel) -> None:
 
 def solve_tso_model(
     model: pyo.ConcreteModel,
-    solver: str = "auto",
+    solver: str = "gurobi",
     options: dict[str, Any] | None = None,
 ) -> pyo.SolverResults:
     """Solve the Pyomo TSO model using the specified solver."""

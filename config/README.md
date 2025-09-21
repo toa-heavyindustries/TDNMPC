@@ -1,7 +1,7 @@
 Config files centralize all tunable parameters for one-click experiments.
 
 How to choose configs
-- CLI: `uv run codex-nmpc --config <name>`
+- CLI: `uv run main --config <name>` (alias retained: `uv run codex-nmpc`)
   - Resolves `<name>` as `config/<name>.yaml` (also supports `.yml`/`.json`).
   - `--list-configs` prints available configs under `config/`.
 
@@ -38,7 +38,7 @@ Top-level keys
 
 Defaults
 - If `N_pred` missing, use `time.steps`.
-- Solver: specify gurobi or ipopt explicitly per run; both TSO/DSO use the same by default.
+- Solver: specify exactly one of `gurobi` or `ipopt` per run (TSO/DSO default to the same).
 - Time limits: `time_limit_seconds` → Gurobi `TimeLimit`, Ipopt `max_cpu_time`.
  - Plot outputs: by default only `admm_conv_latest.png` is kept to avoid file explosion; set `plots.admm_per_step.latest_only: false` and a `stride` to save periodic snapshots.
 
