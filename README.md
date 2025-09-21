@@ -324,13 +324,13 @@ def run_batch(simulator: Callable[[int], dict[str, Any]], seeds: Sequence[int], 
 6. Step 5：时间窗口 -> 单测
 7. Step 6：下层 Pyomo -> 求解一次
 8. Step 7：上层 Pyomo -> 求解一次
-9. Step 8：ADMM -> 收敛曲线
+9. Step 8：ADMM -> 收敛曲线（脚本：scripts/run_admm.py）
 10. Step 9：TI 包络 -> 约束统计
 11. Step 10：NMPC 封装 -> 10 步滚动
 12. Step 11：预测 -> 基线检查
 13. Step 12：`run_experiment.py` -> 全链路
 14. Step 13：评估/可视化 -> summary 与图
-15. Step 14：多 DSO/批处理 -> batch.csv
+15. Step 14：多 DSO/批处理 -> batch.csv；鲁棒性扫参（脚本：scripts/exp_robust_sweep.py）
 16. Step 15：补测试 -> 全绿
 
 ---

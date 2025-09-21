@@ -16,6 +16,7 @@ import pandapower.networks as pn
 import pandas as pd
 
 from models.lindistflow import linearize_lindistflow
+import pandapower.networks as pn
 
 IEE33_LINE_DATA = [
     (1, 2, 0.0922, 0.0470),
@@ -266,6 +267,59 @@ def build_cigre_feeder(
         feeder_type=feeder_literal,
         target_peak_mw=target_peak_mw,
         cos_phi=cos_phi,
+        root_bus=root_bus,
+    )
+
+
+def build_ieee_european_lv_feeder(
+    scenario: str = "on_mid",
+    *,
+    cos_phi: float = 0.95,
+    target_peak_mw: float | None = None,
+) -> DsoFeeder:
+    """Construct an IEEE European LV three-phase feeder wrapped as DsoFeeder.
+
+    The underlying pandapower constructor expects specific scenario keys which can vary
+    across versions. We accept common aliases (on_mid/off_start/off_end) and try direct
+    usage otherwise.
+    """
+
+    # Map friendly names to known keys if necessary
+    alias = {
+        "on_mid": "on_peak_566",
+        "off_start": "off_peak_1",
+        "off_end": "off_peak_1440",
+    }
+    key = alias.get(scenario, scenario)
+    try:
+        net = pn.ieee_european_lv_asymmetric(scenario=key)
+    except Exception:
+        # Fallback: try without scenario (library default)
+        net = pn.ieee_european_lv_asymmetric()
+
+    # Harmonise voltage limits
+    if "min_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "min_vm_pu"] = 0.95
+    if "max_vm_pu" in net.bus.columns:
+        net.bus.loc[:, "max_vm_pu"] = 1.05
+
+    # Determine root PCC bus
+    root_bus = int(net.ext_grid.bus.iloc[0]) if hasattr(net, "ext_grid") and not net.ext_grid.empty else int(net.bus.index[0])
+
+    # Target peak default for LV
+    if target_peak_mw is None:
+        target_peak_mw = 0.4
+
+    # Mark boundary bus
+    net.bus["is_boundary"] = False
+    if root_bus in net.bus.index:
+        net.bus.at[root_bus, "is_boundary"] = True
+
+    return DsoFeeder(
+        net=net,
+        feeder_type="lv",
+        target_peak_mw=float(target_peak_mw),
+        cos_phi=float(cos_phi),
         root_bus=root_bus,
     )
 

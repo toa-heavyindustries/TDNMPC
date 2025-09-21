@@ -38,6 +38,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--tag", default=None, help="Run directory tag")
     p.add_argument("--feeder-peak", type=float, default=20.0, help="Per-feeder peak MW")
     p.add_argument("--trafo-mva", type=float, default=25.0, help="Transformer MVA rating (25 or 40)")
+    p.add_argument("--bess-scale", type=float, default=1.0, help="Scale BESS P/E (e.g., 0.5, 1.0, 1.5)")
+    p.add_argument("--tap-target", type=float, default=1.0, help="LV-side target voltage pu for tap control")
+    p.add_argument("--tap-tol", type=float, default=0.005, help="Voltage tolerance for tap control/tuning")
     return p.parse_args(argv)
 
 
@@ -47,7 +50,7 @@ def _pick_spec(mva: float) -> TransformerSpec:
     return TransformerSpec(sn_mva=40.0, vk_percent=16.2, vkr_percent=0.34, pfe_kw=18.0, i0_percent=0.05)
 
 
-def _configure_tap_and_controls(net: pp.pandapowerNet) -> list[int]:
+def _configure_tap_and_controls(net: pp.pandapowerNet, *, vm_set: float = 1.0, tol: float = 0.005) -> list[int]:
     """Ensure tap settings exist on baseline interface transformers.
 
     If pandapower controllers are unavailable, falls back to static metadata only.
@@ -67,6 +70,26 @@ def _configure_tap_and_controls(net: pp.pandapowerNet) -> list[int]:
     net.trafo.loc[tids, "tap_max"] = 9
     net.trafo.loc[tids, "tap_step_percent"] = 1.5
     net.trafo.loc[tids, "tap_pos"] = 0
+    # Best-effort: attach DiscreteTapControl if available in this pandapower version
+    try:
+        from pandapower.control.basic_controller import DiscreteTapControl  # type: ignore
+
+        for tid in tids:
+            # Target band [0.99, 1.01] pu on LV side, with small hysteresis to reduce hunting
+            _ = DiscreteTapControl(
+                net,
+                tid,
+                side="lv",
+                vm_set_pu=float(vm_set),
+                tol=float(tol),
+                in_service=True,
+                trafotype="two_winding",
+                level=0,
+                check_tap_limits=True,
+            )
+    except Exception:
+        # Controller optional; fall back to greedy tuning below
+        pass
     return tids
 
 
@@ -105,7 +128,7 @@ def _tune_taps_greedy(net: pp.pandapowerNet, tids: list[int], *, tol: float = 0.
             break
 
 
-def _add_bess_and_caps(net: pp.pandapowerNet) -> dict[str, list[int]]:
+def _add_bess_and_caps(net: pp.pandapowerNet, *, bess_scale: float = 1.0) -> dict[str, list[int]]:
     """Add a storage and a capacitor equivalent (as sgen) at each feeder root bus.
 
     Returns indices of created elements by type.
@@ -120,23 +143,42 @@ def _add_bess_and_caps(net: pp.pandapowerNet) -> dict[str, list[int]]:
                 net,
                 bus=root,
                 p_mw=0.0,
-                max_e_mwh=10.0,
-                min_e_mwh=1.0,
+                max_e_mwh=10.0 * bess_scale,
+                min_e_mwh=1.0 * bess_scale,
                 soc_percent=50.0,
-                max_p_mw=5.0,
-                min_p_mw=-5.0,
-                max_q_mvar=4.0,
-                min_q_mvar=-4.0,
+                max_p_mw=5.0 * bess_scale,
+                min_p_mw=-5.0 * bess_scale,
+                max_q_mvar=4.0 * bess_scale,
+                min_q_mvar=-4.0 * bess_scale,
                 controllable=True,
                 name=f"bess_at_{root}",
             )
         )
         created["storage"].append(sidx)
 
-        # Fixed 2 MVAr capacitor modeled as sgen injecting reactive power
-        q_mvar = 2.0
-        cap = int(pp.create_sgen(net, bus=root, p_mw=0.0, q_mvar=q_mvar, name=f"cap_{root}", controllable=False))
-        created["cap_sgen"].append(cap)
+        # Step capacitor bank: 3 steps of 2 MVAr
+        try:
+            # Use shunt as capacitor; emulate 3 steps by creating three identical units disabled by default
+            cap_ids: list[int] = []
+            for step in range(3):
+                cap_id = int(
+                    pp.create_shunt_as_capacitor(
+                        net,
+                        bus=root,
+                        q_mvar=2.0,
+                        loss_factor=0.005,
+                        name=f"cap_{root}_s{step+1}",
+                        in_service=False,
+                    )
+                )
+                cap_ids.append(cap_id)
+            # Simple heuristic: if LV voltage < 0.99 pu after initial PF, enable steps up to band
+            created["cap_sgen"].extend(cap_ids)
+        except Exception:
+            # Fallback to single reactive sgen if shunt API unavailable
+            q_mvar = 2.0
+            cap = int(pp.create_sgen(net, bus=root, p_mw=0.0, q_mvar=q_mvar, name=f"cap_{root}", controllable=False))
+            created["cap_sgen"].append(cap)
 
     return created
 
@@ -150,17 +192,38 @@ def main(argv: list[str] | None = None) -> None:
     )
     net = assemble_baseline_network(plan)
 
-    tids = _configure_tap_and_controls(net)
-    created = _add_bess_and_caps(net)
+    tids = _configure_tap_and_controls(net, vm_set=args.tap_target, tol=args.tap_tol)
+    created = _add_bess_and_caps(net, bess_scale=args.bess_scale)
 
     # No special handling required for sgen-based capacitors
 
-    # Greedy tap tuning without controller dependency, then final solve
+    # Greedy tap tuning without controller dependency, then staged capacitor enabling and final solve
     _tune_taps_greedy(net, tids)
     try:
         pp.runpp(net, calculate_voltage_angles=True, init="results")
     except Exception:
         pp.runpp(net, calculate_voltage_angles=True, init="flat")
+
+    # If shunt steps exist, enable progressively to maintain LV bus ~1.0 pu
+    try:
+        if hasattr(net, "shunt") and not net.shunt.empty:
+            cap_mask = net.shunt["name"].astype(str).str.contains("cap_.*_s", regex=True)
+            cap_ids = net.shunt.index[cap_mask].tolist()
+        else:
+            cap_ids = []
+        if cap_ids:
+            # Enable steps one by one and re-run PF if any bus < 0.99 pu
+            for cap_id in sorted(cap_ids):
+                lv_min = float(net.res_bus.vm_pu.min()) if not net.res_bus.empty else 1.0
+                if lv_min >= 0.99:
+                    break
+                net.shunt.at[cap_id, "in_service"] = True
+                try:
+                    pp.runpp(net, calculate_voltage_angles=True, init="results")
+                except Exception:
+                    pp.runpp(net, calculate_voltage_angles=True, init="flat")
+    except Exception:
+        pass
 
     vm = net.res_bus.vm_pu.to_numpy(copy=False)
     loading_line = net.res_line.loading_percent.to_numpy(copy=False) if not net.line.empty else np.array([])

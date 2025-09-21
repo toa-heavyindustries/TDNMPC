@@ -21,6 +21,7 @@ from sim.base_networks import (
     assemble_baseline_network,
     plan_baseline_coupled_system,
 )
+from dso.network import build_ieee_european_lv_feeder
 from utils.config import ensure_run_dir
 
 
@@ -28,12 +29,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--tag", default=None, help="Run directory tag")
     p.add_argument("--case", default="case118", choices=["case39", "case118"], help="TSO case name")
-    p.add_argument("--feeder-peak", type=float, default=20.0, help="Per-feeder peak MW")
+    p.add_argument("--feeder-peak", type=float, default=20.0, help="Per-feeder peak MW (MV feeders)")
     p.add_argument(
         "--trafo-mva",
         type=float,
         default=25.0,
         help="Transformer MVA rating (choose 25 or 40 per 主要实验.md)",
+    )
+    p.add_argument(
+        "--attach-lv",
+        action="store_true",
+        help="Attach one IEEE European LV feeder at a selected boundary bus (default last)",
+    )
+    p.add_argument(
+        "--lv-scenario",
+        default="on_mid",
+        help="LV scenario key (on_mid/off_start/off_end or raw pandapower key)",
+    )
+    p.add_argument(
+        "--lv-boundary-index",
+        type=int,
+        default=-1,
+        help="Index into discovered boundary buses to attach LV (0-based, default -1 for last)",
     )
     return p.parse_args(argv)
 
@@ -57,6 +74,14 @@ def main(argv: list[str] | None = None) -> None:
         feeder_peak_mw=args.feeder_peak,
         transformer_spec=spec,
     )
+
+    if args.attach_lv and plan.attachments:
+        lv = build_ieee_european_lv_feeder(args.lv_scenario)
+        idx = args.lv_boundary_index if args.lv_boundary_index != -1 else (len(plan.attachments) - 1)
+        if not (0 <= idx < len(plan.attachments)):
+            raise SystemExit(f"lv-boundary-index out of range [0,{len(plan.attachments)-1}]")
+        plan.attachments[idx].feeder = lv
+
     net = assemble_baseline_network(plan)
 
     # AC feasibility check

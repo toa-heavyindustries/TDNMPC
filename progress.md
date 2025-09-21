@@ -1,5 +1,28 @@
 # Project Progress Log
 
+- 2025-09-21 运行脚本补全：新增 ADMM CLI
+  - 新增文件：scripts/run_admm.py
+  - 功能：基于现有 sim.scenario 构建（toy 或模型模式），运行共识 ADMM，输出收敛历史（CSV）与曲线（PNG）。
+  - 产物：runs/<tag>/admm_history.csv, admm_convergence.png, admm_summary.json
+  - 用法示例：
+    - uv run python scripts/run_admm.py --cfg config/demo.yaml --tag admm_demo
+  - 关联规划：对应 README Step 8（ADMM），为后续 TI-NMPC 实验提供独立收敛验证入口。
+
+- 2025-09-21 设备与控制增强：接口分接控制与电容步进
+  - 更新文件：scripts/exp_devices.py
+  - 新增：尝试附加 DiscreteTapControl（若可用），并加入贪心分接调谐；将并联电容改为分步 create_shunt_as_capacitor（3×2 MVAr），并提供逐步使能逻辑。
+  - 参数：--bess-scale, --tap-target, --tap-tol
+
+- 2025-09-21 鲁棒性扫参脚本
+  - 新增文件：scripts/exp_robust_sweep.py
+  - 维度：变压器容量（25/40 MVA）、BESS 比例（0.5/1.0/1.5）、电压带（0.95–1.05 / 0.96–1.04）、tap 容差（0.005/0.01）
+  - 产物：runs/<tag>/robust_sweep.json
+
+- 2025-09-21 TI 包络离线计算脚本
+  - 新增文件：scripts/ti_envelope_from_history.py
+  - 功能：从 runs/<tag>/logs.csv 读取步进历史，按 alpha/margin 计算 time-varying bounds，输出 ti_env_bounds.json 与命中统计 ti_env_stats.json。
+  - 用法：uv run python scripts/ti_envelope_from_history.py --run runs/demo --alpha 0.9 --margin 0.0
+
 ## 2025-09-21
 - Add CLI entrypoint `src/app/main.py`; prefer `uv run main --config <name>` (alias: `uv run codex-nmpc`).
 - Code quality: pass ruff checks; update `pyproject.toml` with line-length=120, ignore `E501`, and per-file ignore `C901` for `src/sim/runner.py`.

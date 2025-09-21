@@ -130,6 +130,27 @@ check_untyped_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
 
+# ---------------------------
+# Setuptools packaging (src-layout)
+# ---------------------------
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+exclude = [
+  "tests*",
+  "scripts*",
+  "notebooks*",
+  "data*",
+  "config*",
+  "logs*",
+  "results*",
+  "runs*",
+  "归档*",
+]
+
 [[tool.mypy.overrides]]
 module = [
   "pandas.*",

@@ -1,4 +1,3 @@
-__init__
 app
 coord
 dso
@@ -7,7 +6,6 @@ interface
 models
 nmpc
 opt
-profiles
 sim
 tso
 utils

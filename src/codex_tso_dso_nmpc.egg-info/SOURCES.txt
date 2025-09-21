@@ -59,6 +59,7 @@ tests/test_envelope.py
 tests/test_forecast.py
 tests/test_interface_adapter.py
 tests/test_lindistflow.py
+tests/test_lv_feeder_and_envelope.py
 tests/test_metrics.py
 tests/test_nmpc.py
 tests/test_plots.py
