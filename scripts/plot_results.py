@@ -1,4 +1,9 @@
-"""Plot residual timeseries and save figures for a given run directory."""
+"""Plot residual timeseries and save figures for a given run directory.
+
+Extended to also:
+  - Visualize LV snapshots summary if present (bar charts of KPIs)
+  - Visualize local timeseries run (bus voltage heatmap and SoC trajectory)
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,8 @@ import argparse
 from ast import literal_eval
 from pathlib import Path
 
+import json
+import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -105,19 +112,21 @@ def plot_pcc_trajectory(logs: pd.DataFrame, run_dir: Path) -> None:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     run_dir = args.run_dir
-    logs = pd.read_csv(run_dir / "logs.csv")
+    logs_path = run_dir / "logs.csv"
+    logs = pd.read_csv(logs_path) if logs_path.exists() else pd.DataFrame()
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(logs["step"], logs["residual_max"], label="residual_max")
-    ax.plot(logs["step"], logs["residual_mean"], label="residual_mean")
-    ax.set_xlabel("step")
-    ax.set_ylabel("residual")
-    ax.set_yscale("log")
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(run_dir / "residuals.png")
-    plt.close(fig)
+    if not logs.empty and {"step","residual_max","residual_mean"}.issubset(logs.columns):
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(logs["step"], logs["residual_max"], label="residual_max")
+        ax.plot(logs["step"], logs["residual_mean"], label="residual_mean")
+        ax.set_xlabel("step")
+        ax.set_ylabel("residual")
+        ax.set_yscale("log")
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(run_dir / "residuals.png")
+        plt.close(fig)
 
     # Parse vector columns and plot per-interface time series
     if {"tso_vector", "dso_vector"}.issubset(logs.columns):
@@ -152,8 +161,79 @@ def main(argv: list[str] | None = None) -> None:
         except Exception:
             pass
 
-    plot_voltage_heatmap(logs, run_dir)
-    plot_pcc_trajectory(logs, run_dir)
+    if not logs.empty:
+        plot_voltage_heatmap(logs, run_dir)
+        plot_pcc_trajectory(logs, run_dir)
+
+    # LV snapshots: plot KPIs from summary if present
+    lv_summary = run_dir / "lv_snapshots.summary.json"
+    if lv_summary.exists():
+        try:
+            data = json.loads(lv_summary.read_text())
+            cases = list(data.keys())
+            vm_min = [data[c]["vm_min"] for c in cases]
+            vm_max = [data[c]["vm_max"] for c in cases]
+            viol = [data[c]["voltage_violations"] for c in cases]
+
+            fig, ax = plt.subplots(figsize=(8, 4))
+            x = np.arange(len(cases))
+            ax.bar(x - 0.2, vm_min, width=0.4, label="vm_min")
+            ax.bar(x + 0.2, vm_max, width=0.4, label="vm_max")
+            ax.axhline(0.95, color="green", linestyle="--", linewidth=1)
+            ax.axhline(1.05, color="green", linestyle="--", linewidth=1)
+            ax.set_xticks(x, cases, rotation=20)
+            ax.set_ylim(0.9, max(1.08, max(vm_max)+0.01))
+            ax.set_ylabel("Voltage (p.u.)")
+            ax.set_title("LV Snapshots: Voltage Range")
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(run_dir / "lv_voltage_range.png")
+            plt.close(fig)
+
+            fig, ax = plt.subplots(figsize=(8, 3.5))
+            ax.bar(cases, viol, color="#cc6677")
+            ax.set_ylabel("Count")
+            ax.set_title("LV Snapshots: Voltage Violations")
+            fig.tight_layout()
+            fig.savefig(run_dir / "lv_voltage_violations.png")
+            plt.close(fig)
+        except Exception as e:  # pragma: no cover
+            print(f"Failed to plot LV snapshots: {e}")
+
+    # Timeseries local run: plot voltage heatmap and SoC if present
+    res_bus_dir = run_dir / "res_bus"
+    if res_bus_dir.exists():
+        try:
+            vm_pickle = res_bus_dir / "vm_pu.p"
+            if vm_pickle.exists():
+                df = pd.read_pickle(vm_pickle)
+                fig, ax = plt.subplots(figsize=(9, 4))
+                im = ax.imshow(df.T, aspect="auto", cmap="viridis", vmin=0.95, vmax=1.05)
+                fig.colorbar(im, ax=ax, label="V (p.u.)")
+                ax.set_xlabel("Time step")
+                ax.set_ylabel("Bus index")
+                ax.set_title("Timeseries: Bus Voltage Heatmap")
+                fig.tight_layout()
+                fig.savefig(run_dir / "ts_voltage_heatmap.png")
+                plt.close(fig)
+        except Exception as e:  # pragma: no cover
+            print(f"Failed to plot timeseries voltages: {e}")
+
+    soc_csv = run_dir / "soc.csv"
+    if soc_csv.exists():
+        try:
+            soc = pd.read_csv(soc_csv)
+            fig, ax = plt.subplots(figsize=(8, 3.5))
+            ax.plot(soc.index, soc.iloc[:, 0], label="SoC (MWh)")
+            ax.set_xlabel("Time step")
+            ax.set_ylabel("SoC (MWh)")
+            ax.grid(True, linestyle="--", alpha=0.4)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(run_dir / "ts_soc.png")
+            plt.close(fig)
+        except Exception as e:  # pragma: no cover
+            print(f"Failed to plot SoC: {e}")
 
 if __name__ == "__main__":
     main()

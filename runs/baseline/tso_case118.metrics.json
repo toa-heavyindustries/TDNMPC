@@ -1,0 +1,13 @@
+{
+  "vm_min": 0.9430000000000001,
+  "vm_max": 1.035,
+  "line_max_loading": 4.493542228482213,
+  "trafo_max_loading": 3.5932644307446324,
+  "n_bus": 118,
+  "n_line": 173,
+  "n_trafo": 13,
+  "case": "case118",
+  "voltage_ok": false,
+  "line_ok": true,
+  "trafo_ok": true
+}

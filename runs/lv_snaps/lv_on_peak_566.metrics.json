@@ -1,0 +1,12 @@
+{
+  "vm_min": 0.996239036505239,
+  "vm_max": 1.067973335573436,
+  "voltage_violations": 901,
+  "line_max_loading": 33.20121091220194,
+  "trafo_max_loading": 12.5888513007534,
+  "losses_mw": 0.0,
+  "n_bus": 907,
+  "n_line": 905,
+  "n_trafo": 1,
+  "case": "ieee_european_lv_on_peak_566"
+}

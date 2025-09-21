@@ -1,0 +1,9 @@
+{
+  "steps": 288,
+  "dt_min": 5.0,
+  "vm_min": NaN,
+  "vm_max": NaN,
+  "voltage_violations": 0,
+  "pv_mw_max": 10.0,
+  "bess_p_mw_abs_max": 0.8179122636485925
+}

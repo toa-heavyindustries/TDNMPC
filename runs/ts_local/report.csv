@@ -1,0 +1,2 @@
+module,steps,dt_min,vm_min,vm_max,violations,pv_mw_max,bess_p_mw_abs_max
+timeseries_local,288,5.0,,,0,10.0,0.8179122636485925

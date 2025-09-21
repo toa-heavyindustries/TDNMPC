@@ -1,0 +1,14 @@
+{
+  "vm_min": 0.8487996993663485,
+  "vm_max": 1.035,
+  "line_max_loading": 46.72965038624341,
+  "trafo_max_loading": 95.5754438184301,
+  "n_bus": 163,
+  "n_line": 218,
+  "n_trafo": 22,
+  "boundary_names": [
+    "58",
+    "115",
+    "89"
+  ]
+}

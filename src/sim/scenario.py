@@ -131,6 +131,19 @@ def _compute_ti_envelopes(
         T = int(p.horizon.steps)
         load_series = p.profiles["load"].iloc[:T]
         pv_series = p.profiles["pv"].iloc[:T]
+        # Robustness: pad with last value if series shorter than T (e.g., edge alignment)
+        def _pad_series(s: pd.Series, length: int) -> pd.Series:
+            s = s.dropna()
+            if s.size >= length:
+                return s.iloc[:length]
+            if s.size == 0:
+                return pd.Series([0.0] * length)
+            last = float(s.iloc[-1])
+            pad = pd.Series([last] * (length - s.size))
+            return pd.concat([s, pad], ignore_index=True)
+
+        load_series = _pad_series(load_series, T)
+        pv_series = _pad_series(pv_series, T)
         L = sample_forecast(
             load_series, sigma=sigL, rho=rho_err, horizon=T, n=scen_count, mode="relative", clamp_nonneg=False
         )

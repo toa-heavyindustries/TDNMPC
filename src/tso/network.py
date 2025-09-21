@@ -186,12 +186,29 @@ def _resolve_boundary_buses(
 
 
 def _infer_boundary_defaults(net: pp.pandapowerNet) -> list[int]:
-    """Select up to three PQ buses as fallback boundaries."""
+    """Heuristic boundary selection: pick top-3 load buses by P.
 
-    load_buses = list(dict.fromkeys(net.load.bus.tolist()))
-    if not load_buses:
+    Fallbacks to the first up-to-three buses if the network has no ``load``
+    table or no positive loads.
+    """
+
+    try:
+        load_df = net.load
+    except Exception:  # pragma: no cover - defensive path
+        load_df = None  # type: ignore[assignment]
+
+    if load_df is None or load_df.empty or "p_mw" not in load_df.columns:
         return net.bus.index.tolist()[: min(3, len(net.bus))]
-    return load_buses[: min(3, len(load_buses))]
+
+    agg = (
+        load_df.groupby("bus")["p_mw"]
+        .sum()
+        .sort_values(ascending=False)
+    )
+    candidates = [int(b) for b in agg.index.tolist() if float(agg.loc[b]) > 0.0]
+    if not candidates:
+        return net.bus.index.tolist()[: min(3, len(net.bus))]
+    return candidates[:3]
 
 
 def _map_bus_label(net: pp.pandapowerNet, label: int | str) -> int:
